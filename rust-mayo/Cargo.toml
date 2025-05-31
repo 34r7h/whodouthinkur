@@ -13,3 +13,10 @@ ctr = "0.9"
 thiserror = "1.0.50"
 sha3 = "0.10"
 hex = "0.4"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+getrandom = { version = "0.2", features = ["js"] }
+js-sys = "0.3"
+
+[lib]
+crate-type = ["cdylib", "rlib"]

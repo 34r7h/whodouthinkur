@@ -5,6 +5,7 @@ pub mod matrix;
 pub mod encoding;
 pub mod params; // Add this line
 pub mod crypto; // Add new module for crypto functions
+pub mod wasm_api;
 
 #[cfg(test)]
 mod tests {
