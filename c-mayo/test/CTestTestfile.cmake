@@ -1,0 +1,38 @@
+# CMake generated Testfile for 
+# Source directory: /Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test
+# Build directory: /Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test
+# 
+# This file includes the relevant testing commands required for 
+# testing this directory and lists subdirectories to be tested as well.
+add_test(MAYO_1_KAT "mayo_test_kat_MAYO_1" "MAYO_1")
+set_tests_properties(MAYO_1_KAT PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;44;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_1_SELFTEST "mayo_test_scheme_MAYO_1" "MAYO_1")
+set_tests_properties(MAYO_1_SELFTEST PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;45;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_1_VARIOUS "mayo_test_various_MAYO_1" "MAYO_1")
+set_tests_properties(MAYO_1_VARIOUS PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;46;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_1_SAMPLE_SOLUTION "mayo_test_sample_solution_MAYO_1")
+set_tests_properties(MAYO_1_SAMPLE_SOLUTION PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;47;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_2_KAT "mayo_test_kat_MAYO_2" "MAYO_2")
+set_tests_properties(MAYO_2_KAT PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;44;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_2_SELFTEST "mayo_test_scheme_MAYO_2" "MAYO_2")
+set_tests_properties(MAYO_2_SELFTEST PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;45;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_2_VARIOUS "mayo_test_various_MAYO_2" "MAYO_2")
+set_tests_properties(MAYO_2_VARIOUS PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;46;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_2_SAMPLE_SOLUTION "mayo_test_sample_solution_MAYO_2")
+set_tests_properties(MAYO_2_SAMPLE_SOLUTION PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;47;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_3_KAT "mayo_test_kat_MAYO_3" "MAYO_3")
+set_tests_properties(MAYO_3_KAT PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;44;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_3_SELFTEST "mayo_test_scheme_MAYO_3" "MAYO_3")
+set_tests_properties(MAYO_3_SELFTEST PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;45;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_3_VARIOUS "mayo_test_various_MAYO_3" "MAYO_3")
+set_tests_properties(MAYO_3_VARIOUS PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;46;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_3_SAMPLE_SOLUTION "mayo_test_sample_solution_MAYO_3")
+set_tests_properties(MAYO_3_SAMPLE_SOLUTION PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;47;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_5_KAT "mayo_test_kat_MAYO_5" "MAYO_5")
+set_tests_properties(MAYO_5_KAT PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;44;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_5_SELFTEST "mayo_test_scheme_MAYO_5" "MAYO_5")
+set_tests_properties(MAYO_5_SELFTEST PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;45;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_5_VARIOUS "mayo_test_various_MAYO_5" "MAYO_5")
+set_tests_properties(MAYO_5_VARIOUS PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;46;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")
+add_test(MAYO_5_SAMPLE_SOLUTION "mayo_test_sample_solution_MAYO_5")
+set_tests_properties(MAYO_5_SAMPLE_SOLUTION PROPERTIES  _BACKTRACE_TRIPLES "/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;47;add_test;/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/CMakeLists.txt;0;")

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmayo_3_test.a CMakeFiles/mayo_3_test.dir/mayo.c.o CMakeFiles/mayo_3_test.dir/params.c.o CMakeFiles/mayo_3_test.dir/arithmetic.c.o
+/usr/bin/ranlib libmayo_3_test.a

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmayo_3_nistapi.a CMakeFiles/mayo_3_nistapi.dir/mayo_3/api.c.o
+/usr/bin/ranlib libmayo_3_nistapi.a

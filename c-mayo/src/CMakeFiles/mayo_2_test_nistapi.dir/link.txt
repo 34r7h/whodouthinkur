@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmayo_2_test_nistapi.a CMakeFiles/mayo_2_test_nistapi.dir/mayo_2/api.c.o
+/usr/bin/ranlib libmayo_2_test_nistapi.a

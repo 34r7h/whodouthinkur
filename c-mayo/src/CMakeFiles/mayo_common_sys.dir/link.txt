@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmayo_common_sys.a CMakeFiles/mayo_common_sys.dir/common/randombytes_system.c.o CMakeFiles/mayo_common_sys.dir/common/aes_c.c.o CMakeFiles/mayo_common_sys.dir/common/aes128ctr.c.o CMakeFiles/mayo_common_sys.dir/common/aes_neon.c.o CMakeFiles/mayo_common_sys.dir/common/fips202.c.o CMakeFiles/mayo_common_sys.dir/common/mem.c.o
+/usr/bin/ranlib libmayo_common_sys.a

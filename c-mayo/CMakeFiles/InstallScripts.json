@@ -1,0 +1,10 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/cmake_install.cmake",
+		"/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/src/cmake_install.cmake",
+		"/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/apps/cmake_install.cmake",
+		"/Users/34r7h/Documents/dev/fun/cubix/identity/MAYO-C-main/test/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

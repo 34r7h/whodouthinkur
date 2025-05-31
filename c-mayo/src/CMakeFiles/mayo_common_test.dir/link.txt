@@ -1,0 +1,2 @@
+/usr/bin/ar qc libmayo_common_test.a CMakeFiles/mayo_common_test.dir/common/randombytes_ctrdrbg.c.o CMakeFiles/mayo_common_test.dir/common/aes_c.c.o CMakeFiles/mayo_common_test.dir/common/aes128ctr.c.o CMakeFiles/mayo_common_test.dir/common/aes_neon.c.o CMakeFiles/mayo_common_test.dir/common/fips202.c.o CMakeFiles/mayo_common_test.dir/common/mem.c.o
+/usr/bin/ranlib libmayo_common_test.a
