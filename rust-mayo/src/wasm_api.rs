@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 use crate::crypto::{generate_keypair_generic, sign_generic, verify_generic, CryptoError};
-use crate::params::{Mayo1, Mayo2, Mayo3, Mayo5, MayoParams};
+use crate::params::{Mayo1, Mayo2, Mayo3, Mayo5};
 
 // Helper to convert CryptoError to JsValue
 fn to_js_error(err: CryptoError) -> JsValue {

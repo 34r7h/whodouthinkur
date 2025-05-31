@@ -15,29 +15,49 @@ function hexToBytes(hex) {
     return bytes;
 }
 
-// DOM Elements
-const paramSetSelect = document.getElementById('paramSet');
-const generateKeysBtn = document.getElementById('generateKeysBtn');
-const publicKeyText = document.getElementById('publicKey');
-const secretKeyText = document.getElementById('secretKey');
-const messageToSignText = document.getElementById('messageToSign');
-const signMessageBtn = document.getElementById('signMessageBtn');
-const signatureText = document.getElementById('signature');
-const verifySignatureBtn = document.getElementById('verifySignatureBtn');
-const statusMessage = document.getElementById('statusMessage');
-
-const savePkBtn = document.getElementById('savePkBtn');
-const uploadPkFile = document.getElementById('uploadPkFile');
-const saveSkBtn = document.getElementById('saveSkBtn');
-const uploadSkFile = document.getElementById('uploadSkFile');
-const saveSigBtn = document.getElementById('saveSigBtn');
-const uploadSigFile = document.getElementById('uploadSigFile');
-
 // Store current keys globally for simplicity in this demo
 let currentSkBytes = null;
 let currentPkBytes = null;
 
+// Wait for DOM to be ready
+function waitForDOM() {
+    return new Promise((resolve) => {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', resolve);
+        } else {
+            resolve();
+        }
+    });
+}
+
 async function main() {
+    // Wait for DOM to be ready
+    await waitForDOM();
+    
+    // Get DOM elements
+    const paramSetSelect = document.getElementById('paramSet');
+    const generateKeysBtn = document.getElementById('generateKeysBtn');
+    const publicKeyText = document.getElementById('publicKey');
+    const secretKeyText = document.getElementById('secretKey');
+    const messageToSignText = document.getElementById('messageToSign');
+    const signMessageBtn = document.getElementById('signMessageBtn');
+    const signatureText = document.getElementById('signature');
+    const verifySignatureBtn = document.getElementById('verifySignatureBtn');
+    const statusMessage = document.getElementById('statusMessage');
+
+    const savePkBtn = document.getElementById('savePkBtn');
+    const uploadPkFile = document.getElementById('uploadPkFile');
+    const saveSkBtn = document.getElementById('saveSkBtn');
+    const uploadSkFile = document.getElementById('uploadSkFile');
+    const saveSigBtn = document.getElementById('saveSigBtn');
+    const uploadSigFile = document.getElementById('uploadSigFile');
+
+    // Check if all elements exist
+    if (!generateKeysBtn) {
+        console.error('Generate keys button not found');
+        return;
+    }
+
     try {
         await init(); // Initialize Wasm module
         console.log("Rust-Mayo Wasm module initialized.");
@@ -50,17 +70,30 @@ async function main() {
         return; // Stop if Wasm fails to load
     }
 
-    generateKeysBtn.addEventListener('click', async () => {
+    generateKeysBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
         const paramSet = paramSetSelect.value;
         statusMessage.textContent = `Generating ${paramSet} keys...`;
         statusMessage.className = "";
+        
         try {
-            const keys = generate_mayo_keypair(paramSet); // Returns JsValue(Array[Uint8Array, Uint8Array])
+            const keys = generate_mayo_keypair(paramSet);
             currentSkBytes = keys[0];
             currentPkBytes = keys[1];
 
             secretKeyText.value = bytesToHex(currentSkBytes);
             publicKeyText.value = bytesToHex(currentPkBytes);
+
+            // LOG: Check for trailing zeros 
+            const pkHex = bytesToHex(currentPkBytes);
+            const trailingZeros = pkHex.match(/0*$/)?.[0]?.length || 0;
+            console.log(`[DEBUG] ${paramSet} public key length: ${currentPkBytes.length} bytes`);
+            console.log(`[DEBUG] ${paramSet} trailing zeros in hex: ${trailingZeros / 2} bytes`);
+            if (trailingZeros > 10) {
+                console.warn(`[DEBUG] ${paramSet} still has ${trailingZeros / 2} trailing zero bytes - implementation may still be incorrect`);
+            } else {
+                console.log(`[DEBUG] ✓ ${paramSet} trailing zeros fixed - proper compact key format`);
+            }
 
             signatureText.value = ""; // Clear previous signature
             statusMessage.textContent = `${paramSet} Keypair generated successfully.`;
@@ -74,7 +107,8 @@ async function main() {
         }
     });
 
-    signMessageBtn.addEventListener('click', async () => {
+    signMessageBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
         const paramSet = paramSetSelect.value;
         const messageStr = messageToSignText.value;
         const messageBytes = new TextEncoder().encode(messageStr);
@@ -84,11 +118,6 @@ async function main() {
             statusMessage.className = "error";
             return;
         }
-
-        // Ensure currentSkBytes is compatible with selected paramSet (basic check)
-        // A more robust check would involve storing paramSet with the key
-        // or deriving expected SK length from paramSet constants if exposed via Wasm.
-        // For now, we assume the user manages this correctly.
 
         statusMessage.textContent = `Signing message with ${paramSet}...`;
         statusMessage.className = "";
@@ -105,13 +134,14 @@ async function main() {
         }
     });
 
-    verifySignatureBtn.addEventListener('click', async () => {
+    verifySignatureBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
         const paramSet = paramSetSelect.value;
         const messageStr = messageToSignText.value;
         const messageBytes = new TextEncoder().encode(messageStr);
 
         let pkToUse = currentPkBytes;
-        if (publicKeyText.value && !currentPkBytes) { // If PK text area has content but no currentPkBytes (e.g. pasted)
+        if (publicKeyText.value && !currentPkBytes) {
              try {
                 pkToUse = hexToBytes(publicKeyText.value);
             } catch (e) {
@@ -120,7 +150,6 @@ async function main() {
                 return;
             }
         }
-
 
         if (!pkToUse) {
             statusMessage.textContent = "Please generate or load a public key first.";
@@ -169,42 +198,50 @@ async function main() {
         URL.revokeObjectURL(url);
     }
 
-    savePkBtn.addEventListener('click', () => {
-        if (currentPkBytes) {
-            saveFile(`${paramSetSelect.value.toLowerCase()}_public_key.key`, currentPkBytes);
-        } else {
-            statusMessage.textContent = "No public key to save.";
-            statusMessage.className = "error";
-        }
-    });
-
-    saveSkBtn.addEventListener('click', () => {
-        if (currentSkBytes) {
-            saveFile(`${paramSetSelect.value.toLowerCase()}_secret_key.key`, currentSkBytes);
-        } else {
-            statusMessage.textContent = "No secret key to save.";
-            statusMessage.className = "error";
-        }
-    });
-
-    saveSigBtn.addEventListener('click', () => {
-        const signatureHex = signatureText.value;
-        if (signatureHex) {
-            try {
-                const signatureBytes = hexToBytes(signatureHex);
-                saveFile(`${paramSetSelect.value.toLowerCase()}_signature.sig`, signatureBytes);
-            } catch (e) {
-                 statusMessage.textContent = `Invalid signature hex for saving: ${e.message}`;
-                 statusMessage.className = "error";
+    if (savePkBtn) {
+        savePkBtn.addEventListener('click', () => {
+            if (currentPkBytes) {
+                saveFile(`${paramSetSelect.value.toLowerCase()}_public_key.key`, currentPkBytes);
+            } else {
+                statusMessage.textContent = "No public key to save.";
+                statusMessage.className = "error";
             }
-        } else {
-            statusMessage.textContent = "No signature to save.";
-            statusMessage.className = "error";
-        }
-    });
+        });
+    }
+
+    if (saveSkBtn) {
+        saveSkBtn.addEventListener('click', () => {
+            if (currentSkBytes) {
+                saveFile(`${paramSetSelect.value.toLowerCase()}_secret_key.key`, currentSkBytes);
+            } else {
+                statusMessage.textContent = "No secret key to save.";
+                statusMessage.className = "error";
+            }
+        });
+    }
+
+    if (saveSigBtn) {
+        saveSigBtn.addEventListener('click', () => {
+            const signatureHex = signatureText.value;
+            if (signatureHex) {
+                try {
+                    const signatureBytes = hexToBytes(signatureHex);
+                    saveFile(`${paramSetSelect.value.toLowerCase()}_signature.sig`, signatureBytes);
+                } catch (e) {
+                     statusMessage.textContent = `Invalid signature hex for saving: ${e.message}`;
+                     statusMessage.className = "error";
+                }
+            } else {
+                statusMessage.textContent = "No signature to save.";
+                statusMessage.className = "error";
+            }
+        });
+    }
 
     // File loading utility
     function loadFile(fileElement, callback) {
+        if (!fileElement) return;
+        
         fileElement.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (file) {
@@ -220,12 +257,12 @@ async function main() {
                 reader.readAsArrayBuffer(file);
             }
         });
-        // Make the label clickable
+        
         const label = document.querySelector(`label[for='${fileElement.id}']`);
         if (label) {
-            label.classList.remove("hidden"); // Show label
-            label.addEventListener('click', () => fileElement.click() ); // Make label trigger file input
-        } else { // If no explicit label, make the input itself visible
+            label.classList.remove("hidden");
+            label.addEventListener('click', () => fileElement.click() );
+        } else {
              fileElement.classList.remove("hidden");
         }
     }
@@ -250,7 +287,6 @@ async function main() {
         statusMessage.textContent = `Signature loaded from ${filename}.`;
         statusMessage.className = "success";
     });
-
 }
 
-main().catch(console.error);
+main().catch(console.error); console.log('Debug: current key bytes length:', currentPkBytes?.length);

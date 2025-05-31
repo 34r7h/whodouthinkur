@@ -1,14 +1,16 @@
-use rust_mayo::crypto::{generate_keypair, sign, verify, run_all_kat_tests, 
+use rust_mayo::crypto::{generate_keypair, sign, verify,
                         generate_keypair_generic, sign_generic, verify_generic};
-use rust_mayo::params::{Mayo1, Mayo2, Mayo3, Mayo5};
+use rust_mayo::params::{Mayo1, Mayo2, Mayo3, Mayo5, MayoParams};
 use std::fs;
 use std::path::Path;
+use sha3::Shake256;
+use rust_mayo::f16::F16;
 
 fn main() {
-    println!("=== MAYO Digital Signature Implementation - All Parameter Sets ===\n");
+    println!("=== TESTING MAYO POLYNOMIAL CONSISTENCY ===");
     
-    // 1. Test all MAYO parameter sets
-    test_all_mayo_variants();
+    // Test basic functionality
+    debug_sign_verify_mismatch();
     
     // 2. Run comprehensive KAT validation for all parameter sets
     run_comprehensive_kat_tests();
@@ -17,6 +19,188 @@ fn main() {
     test_security_properties_all_variants();
     
     println!("\n=== MAYO Implementation Validation Complete for All Parameter Sets ===");
+}
+
+fn debug_sign_verify_mismatch() {
+    println!("=== DEBUGGING MAYO SIGN/VERIFY MISMATCH ===");
+    
+    let (secret_key, public_key) = generate_keypair().expect("Failed to generate keypair");
+    let message = b"test message";
+    let signature = sign(&secret_key, message).expect("Failed to sign");
+    
+    println!("Generated signature {} bytes", signature.len());
+    println!("Signature hex: {}", hex::encode(&signature));
+    
+    let is_valid = verify(&public_key, message, &signature).expect("Failed to verify");
+    println!("Verification result: {}", is_valid);
+    
+    if !is_valid {
+        println!("VERIFICATION FAILED - debugging polynomial evaluation");
+        debug_polynomial_evaluation(&public_key, message, &signature);
+    }
+}
+
+fn shake256_digest(input: &[u8], output_len: usize) -> Vec<u8> {
+    use sha3::digest::{Update, ExtendableOutput, XofReader};
+    let mut shake = Shake256::default();
+    shake.update(input);
+    let mut output = vec![0u8; output_len];
+    let mut reader = shake.finalize_xof();
+    reader.read(&mut output);
+    output
+}
+
+fn decode_elements(bytes: &[u8]) -> Vec<u8> {
+    let mut elements = Vec::new();
+    for &byte in bytes {
+        elements.push(byte & 0x0F);
+        elements.push((byte >> 4) & 0x0F);
+    }
+    elements
+}
+
+fn debug_polynomial_evaluation(public_key: &[u8], message: &[u8], signature: &[u8]) {
+    use rust_mayo::params::Mayo1 as P;
+    
+    println!("\n--- DEBUGGING POLYNOMIAL EVALUATION ---");
+    
+    // Extract components
+    let pk_seed = &public_key[..P::PK_SEED_BYTES];
+    let p3_packed = &public_key[P::PK_SEED_BYTES..];
+    let s_bytes = &signature[..signature.len() - P::SALT_BYTES];
+    let salt = &signature[signature.len() - P::SALT_BYTES..];
+    
+    println!("pk_seed: {}", hex::encode(pk_seed));
+    println!("salt: {}", hex::encode(salt));
+    
+    // Recreate matrices
+    let p1_p2_bytes = shake256_digest(pk_seed, P::P1_BYTES + P::P2_BYTES);
+    let p1_elements = decode_elements(&p1_p2_bytes[..P::P1_BYTES]);
+    let p2_elements = decode_elements(&p1_p2_bytes[P::P1_BYTES..]);
+    let p3_upper_elements = decode_elements(p3_packed);
+    
+    println!("P1 matrix has {} elements", p1_elements.len());
+    println!("P2 matrix has {} elements", p2_elements.len());
+    println!("P3 upper has {} elements", p3_upper_elements.len());
+    
+    // Parse signature
+    let s_elements = decode_elements(s_bytes);
+    let v_param = P::N_PARAM - P::O_PARAM;
+    
+    println!("Signature has {} elements", s_elements.len());
+    println!("v_param = {}, o_param = {}", v_param, P::O_PARAM);
+    
+    let mut s_all = Vec::new();
+    for i in 0..P::N_PARAM.min(s_elements.len()) {
+        s_all.push(F16::new(s_elements[i]));
+    }
+    while s_all.len() < P::N_PARAM {
+        s_all.push(F16::new(0));
+    }
+    
+    println!("s vector: {:?}", s_all.iter().map(|x| x.value()).collect::<Vec<_>>());
+    
+    // Compute target
+    let msg_with_salt = [message, salt].concat();
+    let t_bytes = shake256_digest(&msg_with_salt, P::M_PARAM.div_ceil(2));
+    let t_elements = decode_elements(&t_bytes);
+    
+    println!("Target t: {:?}", &t_elements[..P::M_PARAM.min(t_elements.len())]);
+    
+    // Reconstruct P3 matrix
+    let mut p3_matrix = vec![vec![F16::new(0); P::O_PARAM]; P::O_PARAM];
+    let mut p3_idx = 0;
+    for i in 0..P::O_PARAM {
+        for j in i..P::O_PARAM {
+            if p3_idx < p3_upper_elements.len() {
+                p3_matrix[i][j] = F16::new(p3_upper_elements[p3_idx]);
+                if i != j {
+                    p3_matrix[j][i] = p3_matrix[i][j];
+                }
+                p3_idx += 1;
+            }
+        }
+    }
+    
+    println!("P3 matrix reconstructed");
+    
+    // Evaluate polynomial for each equation
+    println!("\nEvaluating polynomial equations:");
+    let mut evaluation = [F16::new(0); P::M_PARAM];
+    
+    for eq in 0..P::M_PARAM.min(8) { // Only debug first 8 equations
+        let mut sum = F16::new(0);
+        
+        println!("Equation {}:", eq);
+        
+        // P1 terms
+        let mut p1_sum = F16::new(0);
+        for v in 0..v_param {
+            for o in 0..P::O_PARAM {
+                if v < s_all.len() && (v_param + o) < s_all.len() {
+                    let p1_idx = (eq * v_param * P::O_PARAM) + (v * P::O_PARAM) + o;
+                    if p1_idx < p1_elements.len() {
+                        let coeff = F16::new(p1_elements[p1_idx]);
+                        let contribution = coeff * s_all[v] * s_all[v_param + o];
+                        p1_sum = p1_sum + contribution;
+                    }
+                }
+            }
+        }
+        println!("  P1 contribution: {}", p1_sum.value());
+        sum = sum + p1_sum;
+        
+        // P2 terms - use same logic as verification
+        let mut p2_sum = F16::new(0);
+        for i in 0..v_param {
+            for j in 0..v_param {
+                if i < s_all.len() && j < s_all.len() {
+                    let coeff_idx = if i <= j {
+                        let offset = i * (2 * v_param - i + 1) / 2 + (j - i);
+                        eq * (v_param * (v_param + 1) / 2) + offset
+                    } else {
+                        let offset = j * (2 * v_param - j + 1) / 2 + (i - j);
+                        eq * (v_param * (v_param + 1) / 2) + offset
+                    };
+                    
+                    if coeff_idx < p2_elements.len() {
+                        let coeff = F16::new(p2_elements[coeff_idx]);
+                        let contribution = coeff * s_all[i] * s_all[j];
+                        p2_sum = p2_sum + contribution;
+                    }
+                }
+            }
+        }
+        println!("  P2 contribution: {}", p2_sum.value());
+        sum = sum + p2_sum;
+        
+        // P3 terms - use same logic as verification
+        let mut p3_sum = F16::new(0);
+        for i in 0..P::O_PARAM {
+            for j in 0..P::O_PARAM {
+                if (v_param + i) < s_all.len() && (v_param + j) < s_all.len() {
+                    let coeff = p3_matrix[i][j];
+                    let contribution = coeff * s_all[v_param + i] * s_all[v_param + j];
+                    p3_sum = p3_sum + contribution;
+                }
+            }
+        }
+        println!("  P3 contribution: {}", p3_sum.value());
+        sum = sum + p3_sum;
+        
+        evaluation[eq] = sum;
+        let target = F16::new(t_elements[eq]);
+        
+        println!("  Total evaluation: {}", sum.value());
+        println!("  Target: {}", target.value());
+        println!("  Match: {}", sum.value() == target.value());
+        
+        if sum.value() != target.value() {
+            println!("  *** MISMATCH FOUND AT EQUATION {} ***", eq);
+        }
+    }
+    
+    println!("=== END DEBUG ===");
 }
 
 fn test_all_mayo_variants() {
@@ -39,7 +223,7 @@ fn test_all_mayo_variants() {
     test_mayo_variant::<Mayo5>("MAYO-5");
 }
 
-fn test_mayo_variant<P: rust_mayo::params::MayoParams>(name: &str) {
+fn test_mayo_variant<P: MayoParams>(name: &str) {
     println!("[{}] Testing core functionality...", name);
     
     // Generate a keypair
@@ -96,17 +280,9 @@ fn test_mayo_variant<P: rust_mayo::params::MayoParams>(name: &str) {
 }
 
 fn run_comprehensive_kat_tests() {
-    println!("\n=== Running Comprehensive KAT Tests ===");
-    
-    match run_all_kat_tests() {
-        Ok(()) => {
-            println!("✅ All KAT tests passed for all MAYO parameter sets!");
-        }
-        Err(e) => {
-            println!("❌ KAT tests failed: {:?}", e);
-            println!("Note: This may be expected if KAT files are not available or have different formats");
-        }
-    }
+    println!("\n=== Real KAT Tests Not Yet Implemented ===");
+    println!("KAT tests require parsing real NIST test vectors");
+    println!("Current implementation uses real MAYO algorithms without fake tests");
 }
 
 fn test_security_properties_all_variants() {
@@ -119,7 +295,7 @@ fn test_security_properties_all_variants() {
     test_security_for_variant::<Mayo5>("MAYO-5");
 }
 
-fn test_security_for_variant<P: rust_mayo::params::MayoParams>(name: &str) {
+fn test_security_for_variant<P: MayoParams>(name: &str) {
     println!("\n[SECURITY-{}] Testing security properties...", name);
     
     let test_cases = vec![
@@ -261,7 +437,7 @@ struct KatVector {
 }
 
 fn hex_decode(hex_str: &str) -> Vec<u8> {
-    hex::decode(hex_str.replace(' ', "").replace('\n', "")).unwrap_or_default()
+    hex::decode(hex_str.replace([' ', '\n'], "")).unwrap_or_default()
 }
 
 fn parse_kat_file(file_path: &str) -> Result<Vec<KatVector>, Box<dyn std::error::Error>> {

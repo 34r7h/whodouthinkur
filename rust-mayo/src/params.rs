@@ -58,47 +58,49 @@ pub trait MayoParams {
 pub struct Mayo1;
 
 impl MayoParams for Mayo1 {
-    const M_PARAM: usize = 64;
-    const N_PARAM: usize = 66;
-    const O_PARAM: usize = 8;
-    const K_PARAM: usize = 9;
-    const KO_PARAM: usize = 72; // k * o
+    const M_PARAM: usize = 78;      // From MAYO spec
+    const N_PARAM: usize = 86;      // From MAYO spec  
+    const O_PARAM: usize = 8;       // From MAYO spec
+    const K_PARAM: usize = 10;      // From MAYO spec
+    const KO_PARAM: usize = 80;     // k * o = 10 * 8
     
-    const P1_ELEMS_PER_MATRIX: usize = 1711; // (n-o)*(n-o+1)/2 = 58*59/2
-    const P2_ELEMS_PER_MATRIX: usize = 464;  // (n-o)*o = 58*8
+    // Corrected element counts based on proper MAYO formulas
+    const P1_ELEMS_PER_MATRIX: usize = 3081; // (n-o)*(n-o+1)/2 = 78*79/2
+    const P2_ELEMS_PER_MATRIX: usize = 624;  // (n-o)*o = 78*8
     const P3_ELEMS_PER_MATRIX: usize = 36;   // o*(o+1)/2 = 8*9/2
     
-    const SALT_BYTES: usize = 32;
+    const SALT_BYTES: usize = 24;   // From C implementation
     const DIGEST_BYTES: usize = 32;
     const SK_SEED_BYTES: usize = 24;
     const PK_SEED_BYTES: usize = 16;
-    const O_BYTES: usize = 232; // ((n-o)*o+1)/2
-    const P1_BYTES: usize = 54752; // P1_ELEMS_PER_MATRIX * 4 * 8
-    const P2_BYTES: usize = 14848; // P2_ELEMS_PER_MATRIX * 4 * 8  
-    const P3_BYTES: usize = 1152;  // P3_ELEMS_PER_MATRIX * 4 * 8
+    const O_BYTES: usize = 312;     // From C implementation
+    const P1_BYTES: usize = 120159; // From C implementation  
+    const P2_BYTES: usize = 24336;  // From C implementation
+    const P3_BYTES: usize = 1404;   // From C implementation
     
     const CSK_BYTES: usize = 24;
-    const CPK_BYTES: usize = 1168;
-    const SIG_BYTES: usize = 329; // 297 + 32
+    const CPK_BYTES: usize = 1420;  // From C implementation
+    const SIG_BYTES: usize = 454;   // From C implementation
     
-    const R_BYTES: usize = 32;
-    const V_BYTES: usize = 29; // ((n-o)+1)/2
-    const O_ELTS: usize = 464; // (n-o)*o
-    const L_BYTES: usize = 14848; // Same as P2_BYTES
+    const R_BYTES: usize = 40;      // From C implementation
+    const V_BYTES: usize = 39;      // From C implementation
+    const O_ELTS: usize = 624;      // (n-o)*o = 78*8
+    const L_BYTES: usize = 24336;   // Same as P2_BYTES
     const ESK_BYTES: usize = Self::SK_SEED_BYTES + Self::O_BYTES + Self::P1_BYTES + Self::L_BYTES;
     const EPK_BYTES: usize = Self::P1_BYTES + Self::P2_BYTES + Self::P3_BYTES;
     
-    const P1_MAT_ROWS: usize = 58;
-    const P1_MAT_COLS: usize = 58;
+    // Matrix dimensions corrected to match MAYO spec
+    const P1_MAT_ROWS: usize = 78;  // n-o
+    const P1_MAT_COLS: usize = 78;  // n-o
     const P1_IS_TRIANGULAR: bool = true;
-    const P2_MAT_ROWS: usize = 58;
-    const P2_MAT_COLS: usize = 8;
+    const P2_MAT_ROWS: usize = 78;  // n-o
+    const P2_MAT_COLS: usize = 8;   // o
     const P2_IS_TRIANGULAR: bool = false;
-    const P3_MAT_ROWS: usize = 8;
-    const P3_MAT_COLS: usize = 8;
+    const P3_MAT_ROWS: usize = 8;   // o
+    const P3_MAT_COLS: usize = 8;   // o
     const P3_IS_TRIANGULAR: bool = true;
-    const L_MAT_ROWS: usize = 58;
-    const L_MAT_COLS: usize = 8;
+    const L_MAT_ROWS: usize = 78;   // n-o
+    const L_MAT_COLS: usize = 8;    // o
     const L_IS_TRIANGULAR: bool = false;
     
     fn name() -> &'static str { "MAYO-1" }

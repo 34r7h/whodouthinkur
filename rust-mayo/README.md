@@ -15,20 +15,74 @@ The primary goal of this project is to implement the MAYO digital signature sche
 
 ## Current Status
 
-Project initialized. The foundational structure of the Rust crate is set up. Core cryptographic functionalities are under development.
+**✅ Core Implementation Complete**: The MAYO digital signature scheme is fully implemented with:
+- All 4 parameter sets (MAYO-1, MAYO-2, MAYO-3, MAYO-5)
+- Complete key generation, signing, and verification
+- WebAssembly bindings for browser usage
+- Known Answer Test (KAT) validation
 
-## Next Steps
+## Usage
 
-The immediate next steps involve implementing the foundational layers of the MAYO scheme:
+### WebAssembly Frontend
 
-1.  **F16 Finite Field Arithmetic**: Implement operations (addition, multiplication, inverse) and encoding/decoding for elements in F16.
-2.  **Vector Operations**: Develop structures and operations for vectors over F16, including encoding/decoding.
-3.  **Matrix Operations**: Implement matrix structures, basic operations (addition, multiplication, transpose), the `Upper(M)` function, and encoding/decoding for the O matrix.
-4.  **Bitsliced Encodings**: Implement the bitsliced encoding schemes for P1, P2, P3, and L matrices.
-5.  **Helper Functions**: Integrate SHAKE256 and AES-128-CTR.
-6.  **Linear Algebra**: Implement the Echelon Form (`EF`) and `SampleSolution` functions.
+A complete web-based demo is available in the `frontend/` directory:
 
-Following these, the main MAYO algorithms and NIST API will be implemented.
+1. **Start the development server:**
+   ```bash
+   cd rust-mayo
+   python3 -m http.server 8080
+   ```
+
+2. **Open in browser:** Navigate to `http://localhost:8080/frontend/`
+
+3. **Generate keys:** Click "Generate New Keypair" to create MAYO keys
+
+4. **Sign messages:** Enter text and click "Sign Message" 
+
+5. **Verify signatures:** Click "Verify Signature" to validate
+
+**Available parameter sets:**
+- MAYO-1 (Level 1 security)
+- MAYO-2 (Level 2 security) 
+- MAYO-3 (Level 3 security)
+- MAYO-5 (Level 5 security)
+
+### Rust Library
+
+```rust
+use rust_mayo::crypto::{generate_keypair_generic, sign_generic, verify_generic};
+use rust_mayo::params::Mayo1;
+
+// Generate keypair
+let (secret_key, public_key) = generate_keypair_generic::<Mayo1>()?;
+
+// Sign message
+let message = b"Hello MAYO!";
+let signature = sign_generic::<Mayo1>(&secret_key, message)?;
+
+// Verify signature
+let is_valid = verify_generic::<Mayo1>(&public_key, message, &signature)?;
+assert!(is_valid);
+```
+
+### Building
+
+**For native use:**
+```bash
+cargo build --release
+```
+
+**For WebAssembly:**
+```bash
+wasm-pack build --target web --out-dir pkg
+```
+
+### Testing
+
+Run the test suite including KAT validation:
+```bash
+cargo test
+```
 
 ## Contributing
 

@@ -44,7 +44,7 @@ impl Vector {
     // Concatenates nibble encodings, pads with a zero nibble if n is odd.
     pub fn encode_vec(&self) -> Vec<u8> {
         let n = self.elements.len();
-        let num_bytes = (n + 1) / 2;
+        let num_bytes = n.div_ceil(2);
         let mut byte_string = Vec::with_capacity(num_bytes);
         let mut current_byte = 0u8;
 
@@ -72,7 +72,7 @@ impl Vector {
     // Decodes a byte string ∈ B⌈n/2⌉ into a vector in Fn_16.
     // n: target length of the vector.
     pub fn decode_vec(n: usize, byte_string: &[u8]) -> Result<Self, String> {
-        let expected_num_bytes = (n + 1) / 2;
+        let expected_num_bytes = n.div_ceil(2);
         if byte_string.len() != expected_num_bytes {
             return Err(format!(
                 "Invalid byte string length: expected {}, got {}",
