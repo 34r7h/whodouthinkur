@@ -1,6 +1,6 @@
 // rust-mayo/src/encoding.rs
 use crate::f16::F16;
-use crate::vector::Vector; // May not be directly used, but F16 is.
+ // May not be directly used, but F16 is.
 use crate::matrix::Matrix;
 use crate::params; // Import the new params module
 

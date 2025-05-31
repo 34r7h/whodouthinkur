@@ -5,8 +5,6 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use std::error::Error;
 use std::fmt;
-use crate::matrix::Matrix;
-use crate::vector::Vector;
 use crate::params;
 use aes::Aes128;
 use ctr::cipher::{KeyIvInit, StreamCipher};
@@ -61,7 +59,7 @@ fn shake256_digest(input: &[u8], output_len: usize) -> Vec<u8> {
 
 // Generic crypto functions for all MAYO parameter sets
 pub fn generate_keypair_generic<P: MayoParams>() -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
-    println!("[LOG] generate_keypair_generic: starting keypair generation for {}", P::name());
+    println!("[{}] Generating new keypair...", P::name());
     
     // Generate random seed for secret key
     let mut seed = vec![0u8; P::SK_SEED_BYTES];
@@ -88,14 +86,13 @@ pub fn generate_keypair_generic<P: MayoParams>() -> Result<(Vec<u8>, Vec<u8>), C
         public_key.resize(P::CPK_BYTES, 0u8);
     }
     
-    println!("[LOG] generate_keypair_generic: generated keys for {}", P::name());
-    println!("[LOG] generate_keypair_generic: SK size = {}, PK size = {}", secret_key.len(), public_key.len());
+    println!("[{}] ✓ Keypair generated successfully (SK: {}B, PK: {}B)", P::name(), secret_key.len(), public_key.len());
     
     Ok((secret_key, public_key))
 }
 
 pub fn sign_generic<P: MayoParams>(secret_key: &[u8], message: &[u8]) -> Result<Vec<u8>, CryptoError> {
-    println!("[LOG] sign_generic: signing message of {} bytes with {}", message.len(), P::name());
+    println!("[{}] Signing message ({} bytes)...", P::name(), message.len());
     
     if secret_key.len() < P::SK_SEED_BYTES {
         return Err(CryptoError::InvalidKeyLength);
@@ -127,18 +124,17 @@ pub fn sign_generic<P: MayoParams>(secret_key: &[u8], message: &[u8]) -> Result<
     signature.extend_from_slice(&sig_bytes);
     signature.extend_from_slice(&salt);
     
-    println!("[LOG] sign_generic: created signature with {} bytes vector + {} bytes salt for {}", 
-             sig_vector_bytes, P::SALT_BYTES, P::name());
+    println!("[{}] ✓ Signature created successfully ({} bytes total)", P::name(), signature.len());
     
     Ok(signature)
 }
 
 pub fn verify_generic<P: MayoParams>(public_key: &[u8], message: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
-    println!("[LOG] verify_generic: verifying signature with {}", P::name());
+    println!("[{}] Verifying signature...", P::name());
     
     // Step 1: Check signature length
     if signature.len() != P::SIG_BYTES {
-        println!("[LOG] verify_generic: Signature length mismatch for {}: expected {}, got {}", 
+        println!("[{}] ✗ Signature rejected: invalid length (expected {}, got {})", 
                 P::name(), P::SIG_BYTES, signature.len());
         return Ok(false);
     }
@@ -157,7 +153,7 @@ pub fn verify_generic<P: MayoParams>(public_key: &[u8], message: &[u8], signatur
     
     // Step 5: Extract pk_seed from public key
     if public_key.len() < P::PK_SEED_BYTES {
-        println!("[LOG] verify_generic: Public key too short for {}", P::name());
+        println!("[{}] ✗ Signature rejected: public key too short", P::name());
         return Ok(false);
     }
     let pk_seed = &public_key[..P::PK_SEED_BYTES];
@@ -168,7 +164,11 @@ pub fn verify_generic<P: MayoParams>(public_key: &[u8], message: &[u8], signatur
     
     let signature_valid = sig_vector_bytes == expected_sig_bytes;
     
-    println!("[LOG] verify_generic: signature verification result for {}: {}", P::name(), signature_valid);
+    if signature_valid {
+        println!("[{}] ✓ Signature verification successful", P::name());
+    } else {
+        println!("[{}] ✗ Signature verification failed", P::name());
+    }
     
     Ok(signature_valid)
 }

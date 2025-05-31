@@ -61,11 +61,12 @@ fn test_mayo_variant<P: rust_mayo::params::MayoParams>(name: &str) {
                         Ok(true) => {
                             println!("[{}] ✓ Verification successful", name);
                             
-                            // Test with modified message
+                            // Test with modified message (security test)
                             let modified_message = format!("Hello {} world?", name);
+                            println!("[{}] Testing security: verifying with modified message...", name);
                             match verify_generic::<P>(&public_key, modified_message.as_bytes(), &signature) {
                                 Ok(false) => {
-                                    println!("[{}] ✓ Modified message correctly rejected", name);
+                                    println!("[{}] ✓ Security test passed: Modified message correctly rejected", name);
                                 }
                                 Ok(true) => {
                                     println!("[{}] ✗ ERROR: Modified message incorrectly accepted", name);
@@ -137,19 +138,21 @@ fn test_security_for_variant<P: rust_mayo::params::MayoParams>(name: &str) {
                         // Test 1: Valid signature should verify
                         match verify_generic::<P>(&pk, &message, &signature) {
                             Ok(true) => {
-                                // Test 2: Different message should fail
-                                let mut different_message = message.clone();
-                                different_message.push(0xFF);
-                                match verify_generic::<P>(&pk, &different_message, &signature) {
-                                    Ok(false) => {
-                                        // Test 3: Tampered signature should fail
-                                        let mut tampered_sig = signature.clone();
-                                        if !tampered_sig.is_empty() {
-                                            tampered_sig[0] ^= 1;
-                                            match verify_generic::<P>(&pk, &message, &tampered_sig) {
-                                                Ok(false) => {
-                                                    println!("[SECURITY-{}] ✓ {} - All security checks passed", name, test_name);
-                                                }
+                                                        // Test 2: Different message should fail
+                        let mut different_message = message.clone();
+                        different_message.push(0xFF);
+                        println!("[SECURITY-{}] Testing tampered message for {}...", name, test_name);
+                        match verify_generic::<P>(&pk, &different_message, &signature) {
+                            Ok(false) => {
+                                // Test 3: Tampered signature should fail
+                                let mut tampered_sig = signature.clone();
+                                if !tampered_sig.is_empty() {
+                                    tampered_sig[0] ^= 1;
+                                    println!("[SECURITY-{}] Testing tampered signature for {}...", name, test_name);
+                                    match verify_generic::<P>(&pk, &message, &tampered_sig) {
+                                        Ok(false) => {
+                                            println!("[SECURITY-{}] ✓ {} - All security checks passed", name, test_name);
+                                        }
                                                 Ok(true) => {
                                                     println!("[SECURITY-{}] ✗ {} - Tampered signature accepted", name, test_name);
                                                 }
