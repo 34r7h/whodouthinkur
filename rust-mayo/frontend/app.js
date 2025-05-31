@@ -1,292 +1,261 @@
-import init, { generate_mayo_keypair, sign_with_mayo, verify_with_mayo } from '../pkg/rust_mayo.js';
+// app.js - Frontend for MAYO signature demo with Web Worker
 
-// Utility functions for hex conversion
-function bytesToHex(bytes) {
-    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
-}
-
-function hexToBytes(hex) {
-    if (hex.length === 0) return new Uint8Array(0);
-    if (hex.length % 2 !== 0) throw new Error("Hex string must have an even number of characters.");
-    const bytes = new Uint8Array(hex.length / 2);
-    for (let i = 0; i < hex.length; i += 2) {
-        bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+class MayoWorkerClient {
+    constructor() {
+        this.worker = null;
+        this.pendingOperations = new Map();
+        this.nextId = 1;
+        this.init();
     }
-    return bytes;
-}
-
-// Store current keys globally for simplicity in this demo
-let currentSkBytes = null;
-let currentPkBytes = null;
-
-// Wait for DOM to be ready
-function waitForDOM() {
-    return new Promise((resolve) => {
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', resolve);
-        } else {
-            resolve();
-        }
-    });
-}
-
-async function main() {
-    // Wait for DOM to be ready
-    await waitForDOM();
     
-    // Get DOM elements
-    const paramSetSelect = document.getElementById('paramSet');
-    const generateKeysBtn = document.getElementById('generateKeysBtn');
-    const publicKeyText = document.getElementById('publicKey');
-    const secretKeyText = document.getElementById('secretKey');
-    const messageToSignText = document.getElementById('messageToSign');
-    const signMessageBtn = document.getElementById('signMessageBtn');
-    const signatureText = document.getElementById('signature');
-    const verifySignatureBtn = document.getElementById('verifySignatureBtn');
-    const statusMessage = document.getElementById('statusMessage');
+    init() {
+        this.worker = new Worker('./worker.js', { type: 'module' });
+        
+        this.worker.onmessage = (e) => {
+            const { id, result, error } = e.data;
+            const pending = this.pendingOperations.get(id);
+            
+            if (pending) {
+                this.pendingOperations.delete(id);
+                if (error) {
+                    pending.reject(new Error(error));
+                } else {
+                    pending.resolve(result);
+                }
+            }
+        };
+        
+        this.worker.onerror = (error) => {
+            console.error('[CLIENT] Worker error:', error);
+        };
+    }
+    
+    async callWorker(operation, data) {
+        return new Promise((resolve, reject) => {
+            const id = this.nextId++;
+            this.pendingOperations.set(id, { resolve, reject });
+            
+            this.worker.postMessage({
+                operation,
+                data,
+                id
+            });
+            
+            // Timeout after 30 seconds
+            setTimeout(() => {
+                if (this.pendingOperations.has(id)) {
+                    this.pendingOperations.delete(id);
+                    reject(new Error('Operation timed out'));
+                }
+            }, 30000);
+        });
+    }
+    
+    async generateKeys(param = 'MAYO1') {
+        return this.callWorker('generateKeys', { param });
+    }
+    
+    async sign(param, secretKey, message) {
+        return this.callWorker('sign', { param, secretKey, message });
+    }
+    
+    async verify(param, publicKey, message, signature) {
+        return this.callWorker('verify', { param, publicKey, message, signature });
+    }
+}
 
-    const savePkBtn = document.getElementById('savePkBtn');
-    const uploadPkFile = document.getElementById('uploadPkFile');
-    const saveSkBtn = document.getElementById('saveSkBtn');
-    const uploadSkFile = document.getElementById('uploadSkFile');
-    const saveSigBtn = document.getElementById('saveSigBtn');
-    const uploadSigFile = document.getElementById('uploadSigFile');
+// Global variables
+let mayoClient = null;
+let currentKeys = null;
 
-    // Check if all elements exist
-    if (!generateKeysBtn) {
-        console.error('Generate keys button not found');
+// UI Elements
+const statusElement = document.getElementById('status');
+const generateBtn = document.getElementById('generateBtn');
+const messageInput = document.getElementById('messageInput');
+const signBtn = document.getElementById('signBtn');
+const verifyBtn = document.getElementById('verifyBtn');
+const signatureDisplay = document.getElementById('signatureDisplay');
+const verificationResult = document.getElementById('verificationResult');
+
+// Utility functions
+function updateStatus(message, isError = false) {
+    statusElement.textContent = message;
+    statusElement.className = isError ? 'error' : 'success';
+    console.log(`[STATUS] ${message}`);
+}
+
+function setButtonLoading(button, loading) {
+    button.disabled = loading;
+    button.textContent = loading ? 'Working...' : button.dataset.originalText || button.textContent;
+    if (!button.dataset.originalText) {
+        button.dataset.originalText = button.textContent;
+    }
+}
+
+function arrayToHex(array) {
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function hexToArray(hex) {
+    const result = [];
+    for (let i = 0; i < hex.length; i += 2) {
+        result.push(parseInt(hex.substr(i, 2), 16));
+    }
+    return new Uint8Array(result);
+}
+
+// Initialize application
+async function initApp() {
+    try {
+        updateStatus('Initializing MAYO Web Worker...');
+        mayoClient = new MayoWorkerClient();
+        
+        // Wait a moment for worker to initialize
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        updateStatus('Ready! Generate keys to begin.');
+        generateBtn.disabled = false;
+        window.wasmReady = true;
+        
+    } catch (error) {
+        updateStatus(`Failed to initialize: ${error.message}`, true);
+        console.error('[INIT] Initialization failed:', error);
+    }
+}
+
+// Generate keypair
+async function generateKeypair() {
+    try {
+        setButtonLoading(generateBtn, true);
+        updateStatus('Generating MAYO-1 keypair...');
+        
+        const keys = await mayoClient.generateKeys('MAYO1');
+        currentKeys = keys;
+        
+        updateStatus(`Keys generated! SK: ${keys.secret_key.length} bytes, PK: ${keys.public_key.length} bytes`);
+        
+        // Enable other buttons
+        signBtn.disabled = false;
+        verifyBtn.disabled = false;
+        
+        console.log('[KEYS] Generated:', {
+            secretKeyLength: keys.secret_key.length,
+            publicKeyLength: keys.public_key.length
+        });
+        
+    } catch (error) {
+        updateStatus(`Key generation failed: ${error.message}`, true);
+        console.error('[KEYS] Generation failed:', error);
+    } finally {
+        setButtonLoading(generateBtn, false);
+    }
+}
+
+// Sign message
+async function signMessage() {
+    if (!currentKeys) {
+        updateStatus('Please generate keys first!', true);
+        return;
+    }
+
+    const message = messageInput.value.trim();
+    if (!message) {
+        updateStatus('Please enter a message to sign!', true);
         return;
     }
 
     try {
-        await init(); // Initialize Wasm module
-        console.log("Rust-Mayo Wasm module initialized.");
-        statusMessage.textContent = "Wasm module loaded. Ready.";
-        statusMessage.className = "success";
-    } catch (e) {
-        console.error("Error initializing Wasm module:", e);
-        statusMessage.textContent = "Error initializing Wasm: " + e;
-        statusMessage.className = "error";
-        return; // Stop if Wasm fails to load
-    }
-
-    generateKeysBtn.addEventListener('click', async (event) => {
-        event.preventDefault();
-        const paramSet = paramSetSelect.value;
-        statusMessage.textContent = `Generating ${paramSet} keys...`;
-        statusMessage.className = "";
+        setButtonLoading(signBtn, true);
+        updateStatus('Signing message...');
+        signatureDisplay.textContent = '';
+        verificationResult.textContent = '';
         
-        try {
-            const keys = generate_mayo_keypair(paramSet);
-            currentSkBytes = keys[0];
-            currentPkBytes = keys[1];
-
-            secretKeyText.value = bytesToHex(currentSkBytes);
-            publicKeyText.value = bytesToHex(currentPkBytes);
-
-            // LOG: Check for trailing zeros 
-            const pkHex = bytesToHex(currentPkBytes);
-            const trailingZeros = pkHex.match(/0*$/)?.[0]?.length || 0;
-            console.log(`[DEBUG] ${paramSet} public key length: ${currentPkBytes.length} bytes`);
-            console.log(`[DEBUG] ${paramSet} trailing zeros in hex: ${trailingZeros / 2} bytes`);
-            if (trailingZeros > 10) {
-                console.warn(`[DEBUG] ${paramSet} still has ${trailingZeros / 2} trailing zero bytes - implementation may still be incorrect`);
-            } else {
-                console.log(`[DEBUG] ✓ ${paramSet} trailing zeros fixed - proper compact key format`);
-            }
-
-            signatureText.value = ""; // Clear previous signature
-            statusMessage.textContent = `${paramSet} Keypair generated successfully.`;
-            statusMessage.className = "success";
-        } catch (e) {
-            console.error(`Error generating ${paramSet} keys:`, e);
-            statusMessage.textContent = `Error generating keys: ${e}`;
-            statusMessage.className = "error";
-            secretKeyText.value = "";
-            publicKeyText.value = "";
-        }
-    });
-
-    signMessageBtn.addEventListener('click', async (event) => {
-        event.preventDefault();
-        const paramSet = paramSetSelect.value;
-        const messageStr = messageToSignText.value;
-        const messageBytes = new TextEncoder().encode(messageStr);
-
-        if (!currentSkBytes) {
-            statusMessage.textContent = "Please generate or load a secret key first.";
-            statusMessage.className = "error";
-            return;
-        }
-
-        statusMessage.textContent = `Signing message with ${paramSet}...`;
-        statusMessage.className = "";
-        try {
-            const signatureBytes = sign_with_mayo(paramSet, currentSkBytes, messageBytes);
-            signatureText.value = bytesToHex(signatureBytes);
-            statusMessage.textContent = "Message signed successfully.";
-            statusMessage.className = "success";
-        } catch (e) {
-            console.error(`Error signing message with ${paramSet}:`, e);
-            statusMessage.textContent = `Error signing message: ${e}`;
-            statusMessage.className = "error";
-            signatureText.value = "";
-        }
-    });
-
-    verifySignatureBtn.addEventListener('click', async (event) => {
-        event.preventDefault();
-        const paramSet = paramSetSelect.value;
-        const messageStr = messageToSignText.value;
-        const messageBytes = new TextEncoder().encode(messageStr);
-
-        let pkToUse = currentPkBytes;
-        if (publicKeyText.value && !currentPkBytes) {
-             try {
-                pkToUse = hexToBytes(publicKeyText.value);
-            } catch (e) {
-                statusMessage.textContent = `Invalid Public Key hex: ${e.message}`;
-                statusMessage.className = "error";
-                return;
-            }
-        }
-
-        if (!pkToUse) {
-            statusMessage.textContent = "Please generate or load a public key first.";
-            statusMessage.className = "error";
-            return;
-        }
-
-        let signatureBytes;
-        try {
-            signatureBytes = hexToBytes(signatureText.value);
-            if (signatureBytes.length === 0) throw new Error("Signature is empty.");
-        } catch (e) {
-            statusMessage.textContent = `Invalid Signature hex: ${e.message}`;
-            statusMessage.className = "error";
-            return;
-        }
-
-        statusMessage.textContent = `Verifying signature with ${paramSet}...`;
-        statusMessage.className = "";
-        try {
-            const isValid = verify_with_mayo(paramSet, pkToUse, messageBytes, signatureBytes);
-            if (isValid) {
-                statusMessage.textContent = "Signature is VALID.";
-                statusMessage.className = "success";
-            } else {
-                statusMessage.textContent = "Signature is INVALID.";
-                statusMessage.className = "error";
-            }
-        } catch (e) {
-            console.error(`Error verifying signature with ${paramSet}:`, e);
-            statusMessage.textContent = `Error verifying signature: ${e}`;
-            statusMessage.className = "error";
-        }
-    });
-
-    // File saving utility
-    function saveFile(filename, data, type = 'application/octet-stream') {
-        const blob = new Blob([data], { type });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-
-    if (savePkBtn) {
-        savePkBtn.addEventListener('click', () => {
-            if (currentPkBytes) {
-                saveFile(`${paramSetSelect.value.toLowerCase()}_public_key.key`, currentPkBytes);
-            } else {
-                statusMessage.textContent = "No public key to save.";
-                statusMessage.className = "error";
-            }
-        });
-    }
-
-    if (saveSkBtn) {
-        saveSkBtn.addEventListener('click', () => {
-            if (currentSkBytes) {
-                saveFile(`${paramSetSelect.value.toLowerCase()}_secret_key.key`, currentSkBytes);
-            } else {
-                statusMessage.textContent = "No secret key to save.";
-                statusMessage.className = "error";
-            }
-        });
-    }
-
-    if (saveSigBtn) {
-        saveSigBtn.addEventListener('click', () => {
-            const signatureHex = signatureText.value;
-            if (signatureHex) {
-                try {
-                    const signatureBytes = hexToBytes(signatureHex);
-                    saveFile(`${paramSetSelect.value.toLowerCase()}_signature.sig`, signatureBytes);
-                } catch (e) {
-                     statusMessage.textContent = `Invalid signature hex for saving: ${e.message}`;
-                     statusMessage.className = "error";
-                }
-            } else {
-                statusMessage.textContent = "No signature to save.";
-                statusMessage.className = "error";
-            }
-        });
-    }
-
-    // File loading utility
-    function loadFile(fileElement, callback) {
-        if (!fileElement) return;
+        // Convert message to bytes
+        const messageBytes = new TextEncoder().encode(message);
         
-        fileElement.addEventListener('change', (event) => {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const bytes = new Uint8Array(e.target.result);
-                    callback(bytes, file.name);
-                };
-                reader.onerror = (e) => {
-                    statusMessage.textContent = `Error reading file: ${e}`;
-                    statusMessage.className = "error";
-                };
-                reader.readAsArrayBuffer(file);
-            }
-        });
+        const signature = await mayoClient.sign('MAYO1', currentKeys.secret_key, messageBytes);
         
-        const label = document.querySelector(`label[for='${fileElement.id}']`);
-        if (label) {
-            label.classList.remove("hidden");
-            label.addEventListener('click', () => fileElement.click() );
-        } else {
-             fileElement.classList.remove("hidden");
-        }
+        const hexSignature = arrayToHex(signature);
+        signatureDisplay.textContent = hexSignature;
+        
+        updateStatus(`Message signed successfully! Signature: ${signature.length} bytes`);
+        
+        console.log('[SIGN] Success:', {
+            messageLength: messageBytes.length,
+            signatureLength: signature.length,
+            signature: hexSignature.substring(0, 32) + '...'
+        });
+    } catch (error) {
+        updateStatus(`Signing failed: ${error.message}`, true);
+        console.error('[SIGN] Failed:', error);
+        signatureDisplay.textContent = 'SIGNING FAILED';
+    } finally {
+        setButtonLoading(signBtn, false);
+        // Log the current status text for debugging
+        console.log('[DEBUG] Status after sign:', statusElement.textContent);
     }
-
-    loadFile(uploadPkFile, (bytes, filename) => {
-        currentPkBytes = bytes;
-        publicKeyText.value = bytesToHex(bytes);
-        statusMessage.textContent = `Public key loaded from ${filename}.`;
-        statusMessage.className = "success";
-    });
-
-    loadFile(uploadSkFile, (bytes, filename) => {
-        currentSkBytes = bytes;
-        secretKeyText.value = bytesToHex(bytes);
-        signatureText.value = ""; // Clear previous signature as SK changed
-        statusMessage.textContent = `Secret key loaded from ${filename}.`;
-        statusMessage.className = "success";
-    });
-
-    loadFile(uploadSigFile, (bytes, filename) => {
-        signatureText.value = bytesToHex(bytes);
-        statusMessage.textContent = `Signature loaded from ${filename}.`;
-        statusMessage.className = "success";
-    });
 }
 
-main().catch(console.error);
+// Verify signature
+async function verifySignature() {
+    if (!currentKeys) {
+        updateStatus('Please generate keys first!', true);
+        return;
+    }
+    
+    const message = messageInput.value.trim();
+    const signatureHex = signatureDisplay.textContent.trim();
+    
+    if (!message || !signatureHex || signatureHex === 'SIGNING FAILED') {
+        updateStatus('Please sign a message first!', true);
+        return;
+    }
+    
+    try {
+        setButtonLoading(verifyBtn, true);
+        updateStatus('Verifying signature...');
+        verificationResult.textContent = '';
+        
+        // Convert inputs to bytes
+        const messageBytes = new TextEncoder().encode(message);
+        const signatureBytes = hexToArray(signatureHex);
+        
+        const isValid = await mayoClient.verify('MAYO1', currentKeys.public_key, messageBytes, signatureBytes);
+        
+        verificationResult.textContent = isValid ? 'VALID ✓' : 'INVALID ✗';
+        verificationResult.className = isValid ? 'success' : 'error';
+        
+        updateStatus(`Verification complete: ${isValid ? 'VALID' : 'INVALID'}`);
+        
+        console.log('[VERIFY] Result:', {
+            messageLength: messageBytes.length,
+            signatureLength: signatureBytes.length,
+            isValid
+        });
+        
+    } catch (error) {
+        updateStatus(`Verification failed: ${error.message}`, true);
+        console.error('[VERIFY] Failed:', error);
+        verificationResult.textContent = 'VERIFICATION ERROR';
+        verificationResult.className = 'error';
+    } finally {
+        setButtonLoading(verifyBtn, false);
+    }
+}
+
+// Event listeners
+generateBtn.addEventListener('click', generateKeypair);
+signBtn.addEventListener('click', signMessage);
+verifyBtn.addEventListener('click', verifySignature);
+
+// Allow Enter key to trigger signing
+messageInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && !signBtn.disabled) {
+        signMessage();
+    }
+});
+
+// Initialize when page loads
+document.addEventListener('DOMContentLoaded', initApp);
+
+console.log('[APP] MAYO Frontend with Web Worker initialized');

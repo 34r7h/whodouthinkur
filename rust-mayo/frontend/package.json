@@ -1,14 +1,17 @@
 {
-  "name": "frontend",
-  "version": "1.0.0",
-  "main": "app.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "name": "rust-mayo",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "rust_mayo_bg.wasm",
+    "rust_mayo.js",
+    "rust_mayo.d.ts"
+  ],
+  "main": "rust_mayo.js",
+  "types": "rust_mayo.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
   "dependencies": {
     "puppeteer": "^24.9.0"
   }

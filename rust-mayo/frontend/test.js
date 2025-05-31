@@ -1,55 +1,70 @@
-const puppeteer = require('puppeteer');
+import puppeteer from 'puppeteer';
 
-async function testFrontend() {
-    const browser = await puppeteer.launch({ 
+async function testMayoSignatures() {
+    console.log('Starting MAYO signature test...');
+    
+    const browser = await puppeteer.launch({
         headless: false,
-        devtools: true 
-    });
-    
-    const page = await browser.newPage();
-    
-    page.on('console', msg => {
-        console.log(`[BROWSER] ${msg.type()}: ${msg.text()}`);
-    });
-    
-    page.on('pageerror', error => {
-        console.log(`[PAGE ERROR] ${error.message}`);
+        defaultViewport: null,
+        args: ['--window-size=1200,800']
     });
     
     try {
-        await page.goto('http://localhost:8080', { waitUntil: 'networkidle0' });
+        const page = await browser.newPage();
         
-        console.log('Page loaded, waiting for WASM...');
-        await page.waitForFunction(() => document.querySelector('#statusMessage')?.textContent?.includes('Ready'));
+        // Enable console logging
+        page.on('console', msg => console.log('Browser console:', msg.text()));
         
-        console.log('Generating keys...');
-        await page.click('#generateKeysBtn');
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        // Navigate to the local server
+        await page.goto('http://localhost:8080');
+        console.log('Page loaded');
         
-        console.log('Typing message...');
-        await page.type('#messageToSign', 'Hello MAYO test');
+        // Wait for WASM to initialize
+        await page.waitForFunction(() => window.wasmReady === true, { timeout: 10000 });
+        console.log('WASM initialized');
         
-        console.log('Attempting to sign...');
-        await page.click('#signMessageBtn');
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Generate keys
+        await page.click('#generateBtn');
+        await page.waitForFunction(() => {
+            const status = document.getElementById('status').textContent;
+            return status.includes('Keys generated');
+        }, { timeout: 10000 });
+        console.log('Keys generated');
         
-        const signature = await page.$eval('#signature', el => el.value);
-        console.log('Signature:', signature ? 'SUCCESS' : 'FAILED');
+        // Enter test message
+        await page.type('#messageInput', 'Test message for MAYO signature');
         
-        if (signature) {
-            console.log('Attempting to verify...');
-            await page.click('#verifySignatureBtn');
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            const status = await page.$eval('#statusMessage', el => el.textContent);
-            console.log('Verification status:', status);
-        }
+        // Sign message
+        await page.click('#signBtn');
+        await page.waitForFunction(() => {
+            const status = document.getElementById('status').textContent;
+            return status.includes('Message signed successfully');
+        }, { timeout: 10000 });
+        console.log('Message signed');
+        
+        // Get signature
+        const signature = await page.evaluate(() => {
+            return document.getElementById('signatureDisplay').textContent;
+        });
+        console.log('Signature:', signature);
+        
+        // Verify signature
+        await page.click('#verifyBtn');
+        await page.waitForFunction(() => {
+            const result = document.getElementById('verificationResult').textContent;
+            return result.includes('Signature is valid');
+        }, { timeout: 10000 });
+        console.log('Signature verified');
+        
+        // Take screenshot
+        await page.screenshot({ path: 'mayo-test-result.png' });
+        console.log('Screenshot saved');
         
     } catch (error) {
-        console.error('Test error:', error);
+        console.error('Test failed:', error);
+    } finally {
+        await browser.close();
     }
-    
-    console.log('Test complete - keeping browser open');
 }
 
-testFrontend().catch(console.error); 
+testMayoSignatures().catch(console.error); 

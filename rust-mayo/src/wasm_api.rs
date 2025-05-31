@@ -8,26 +8,32 @@ fn to_js_error(err: CryptoError) -> JsValue {
 }
 
 #[wasm_bindgen]
+pub fn generate_keypair_wasm(param_set_name: &str) -> Result<JsValue, JsValue> {
+    web_sys::console::log_1(&format!("[WASM] generate_keypair_wasm called: param={}", param_set_name).into());
+    
+    let result = match param_set_name {
+        "MAYO1" => generate_keypair_generic::<Mayo1>().map_err(to_js_error)?,
+        "MAYO2" => generate_keypair_generic::<Mayo2>().map_err(to_js_error)?,
+        "MAYO3" => generate_keypair_generic::<Mayo3>().map_err(to_js_error)?,
+        "MAYO5" => generate_keypair_generic::<Mayo5>().map_err(to_js_error)?,
+        _ => return Err(JsValue::from_str("Invalid MAYO parameter set name"))
+    };
+    
+    let (sk, pk) = result;
+    
+    // Create a JavaScript object with the keys
+    let obj = js_sys::Object::new();
+    js_sys::Reflect::set(&obj, &"secret_key".into(), &js_sys::Uint8Array::from(sk.as_slice()))?;
+    js_sys::Reflect::set(&obj, &"public_key".into(), &js_sys::Uint8Array::from(pk.as_slice()))?;
+    
+    web_sys::console::log_1(&format!("[WASM] Keys generated: SK={} bytes, PK={} bytes", sk.len(), pk.len()).into());
+    
+    Ok(obj.into())
+}
+
+#[wasm_bindgen]
 pub fn generate_mayo_keypair(param_set_name: &str) -> Result<JsValue, JsValue> {
-    match param_set_name {
-        "MAYO1" => {
-            let (sk, pk) = generate_keypair_generic::<Mayo1>().map_err(to_js_error)?;
-            Ok(js_sys::Array::of2(&js_sys::Uint8Array::from(sk.as_slice()), &js_sys::Uint8Array::from(pk.as_slice())).into())
-        }
-        "MAYO2" => {
-            let (sk, pk) = generate_keypair_generic::<Mayo2>().map_err(to_js_error)?;
-            Ok(js_sys::Array::of2(&js_sys::Uint8Array::from(sk.as_slice()), &js_sys::Uint8Array::from(pk.as_slice())).into())
-        }
-        "MAYO3" => {
-            let (sk, pk) = generate_keypair_generic::<Mayo3>().map_err(to_js_error)?;
-            Ok(js_sys::Array::of2(&js_sys::Uint8Array::from(sk.as_slice()), &js_sys::Uint8Array::from(pk.as_slice())).into())
-        }
-        "MAYO5" => {
-            let (sk, pk) = generate_keypair_generic::<Mayo5>().map_err(to_js_error)?;
-            Ok(js_sys::Array::of2(&js_sys::Uint8Array::from(sk.as_slice()), &js_sys::Uint8Array::from(pk.as_slice())).into())
-        }
-        _ => Err(JsValue::from_str("Invalid MAYO parameter set name"))
-    }
+    generate_keypair_wasm(param_set_name)
 }
 
 #[wasm_bindgen]
