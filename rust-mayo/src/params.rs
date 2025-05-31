@@ -1,301 +1,216 @@
 // rust-mayo/src/params.rs
 
 // MAYO parameter sets trait and implementations
-pub trait MayoParams {
-    const M_PARAM: usize;
-    const N_PARAM: usize;
-    const O_PARAM: usize;
-    const K_PARAM: usize;
-    const KO_PARAM: usize;
-    
-    // Matrix element counts
-    const P1_ELEMS_PER_MATRIX: usize;
-    const P2_ELEMS_PER_MATRIX: usize;
-    const P3_ELEMS_PER_MATRIX: usize;
-    
-    // Byte sizes
+pub trait MayoParams: Send + Sync + 'static {
+    const NAME: &'static str;
+    const SECURITY_LEVEL: usize;
+
+    // Core MAYO parameters
+    const M_PARAM: usize; // Number of equations
+    const N_PARAM: usize; // Number of variables (oil + vinegar)
+    const O_PARAM: usize; // Number of oil variables
+    const K_PARAM: usize; // Number of vinegar variables used to build P_O_i
+    const Q_PARAM: usize; // Field size (always 16 for MAYO)
+
+    const M_VEC_LIMBS: usize; // Number of u64 limbs to store m elements
+
+    // Coefficients for irreducible polynomial f(z) over GF(16)
+    // specific to the m value. E.g., for m=78, f(z) = z^78 + F_TAIL[0]*z^3 + F_TAIL[1]*z^2 + F_TAIL[2]*z + F_TAIL[3]
+    // The C code uses these as {c3, c2, c1, c0} for terms z^3, z^2, z^1, z^0 in the reduction of X^m mod f(X)
+    // but mayo.h defines them as coefficients of f(z) itself, for the lowest degree terms.
+    // Let's stick to mayo.h's F_TAIL interpretation for the polynomial f(z) related to m.
+    // The actual f(z) for GF(16) is x^4+x+1. F_TAIL here is for a different polynomial related to m.
+    // Based on c-mayo/mayo.h, these are for f(z) = z^m_val + f_tail[0]*z^3 + f_tail[1]*z^2 + f_tail[2]*z + f_tail[3]
+    // The C code uses these values in compute_rhs to reduce a polynomial of degree k*k.
+    // These are the coefficients of the reduction polynomial for x^m_val mod P(x) where P(x) is the field polynomial.
+    // For now, storing them as defined. Their exact use in rust will need care.
+    // The C code's F_TAIL_XX seem to be coefficients for specific reduction polynomials.
+    const F_TAIL: &'static [u8];
+
+
+    // Derived parameters
+    const V_PARAM: usize = Self::N_PARAM - Self::O_PARAM; // Number of vinegar variables
+
+    // Byte sizes for seeds, salt, digest
+    const SK_SEED_BYTES: usize; // Secret key seed size
+    const PK_SEED_BYTES: usize; // Public key seed size (for P1, P2 derivation)
     const SALT_BYTES: usize;
     const DIGEST_BYTES: usize;
-    const SK_SEED_BYTES: usize;
-    const PK_SEED_BYTES: usize;
-    const O_BYTES: usize;
-    const P1_BYTES: usize;
-    const P2_BYTES: usize;
-    const P3_BYTES: usize;
-    
-    // Key and signature sizes
-    const CSK_BYTES: usize;
-    const CPK_BYTES: usize;
-    const SIG_BYTES: usize;
-    
-    // Additional constants
-    const R_BYTES: usize;
-    const V_BYTES: usize;
-    const O_ELTS: usize;
-    const L_BYTES: usize;
-    const ESK_BYTES: usize;
-    const EPK_BYTES: usize;
-    
-    // Matrix dimensions
-    const P1_MAT_ROWS: usize;
-    const P1_MAT_COLS: usize;
-    const P1_IS_TRIANGULAR: bool;
-    const P2_MAT_ROWS: usize;
-    const P2_MAT_COLS: usize;
-    const P2_IS_TRIANGULAR: bool;
-    const P3_MAT_ROWS: usize;
-    const P3_MAT_COLS: usize;
-    const P3_IS_TRIANGULAR: bool;
-    const L_MAT_ROWS: usize;
-    const L_MAT_COLS: usize;
-    const L_IS_TRIANGULAR: bool;
-    
-    fn name() -> &'static str;
-    fn security_level() -> usize;
+    const R_BYTES: usize; // Random bytes for solution sampling during signing
+
+    // Byte sizes for components of the public key and secret key (relevant for parsing KAT files and constructing keys)
+    // These are from mayo.h defines (e.g. MAYO_1_P1_bytes)
+    const CPK_P1_BYTES: usize; // Size of P1 component in compact public key (if applicable, usually expanded)
+    const CPK_P2_BYTES: usize; // Size of P2 component in compact public key (if applicable, usually expanded)
+    const CPK_P3_BYTES: usize; // Size of P3 component in compact public key (this is what's typically stored after pk_seed)
+    const O_BYTES: usize;      // Size of the oil matrix O component in (expanded) secret key or derived from sk_seed for cpk
+
+    // Sizes for compact keys and signature
+    const CSK_BYTES: usize; // Compact secret key size (usually just sk_seed)
+    const CPK_BYTES: usize; // Compact public key size
+    const SIG_BYTES: usize; // Full signature size (salt + encoded solution)
+
+    // Helper: Number of elements in P1, P2, P3 matrices (assuming GF(16) elements)
+    // P1 is v x v, symmetric (upper triangular stored)
+    const P1_ELEMENTS: usize = (Self::V_PARAM * (Self::V_PARAM + 1)) / 2;
+    // P2 is v x o
+    const P2_ELEMENTS: usize = Self::V_PARAM * Self::O_PARAM;
+    // P3 is o x o, symmetric (upper triangular stored)
+    const P3_ELEMENTS: usize = (Self::O_PARAM * (Self::O_PARAM + 1)) / 2;
+
+    // These are informational, actual matrix layout will be more complex (vectors of m_vec_limbs)
+    // For L matrix (secret, v x o)
+    const L_ELEMENTS: usize = Self::V_PARAM * Self::O_PARAM;
+
+
+    // Dimensions for key matrices for clarity
+    const P1_MAT_ROWS: usize = Self::V_PARAM;
+    const P1_MAT_COLS: usize = Self::V_PARAM;
+    const P1_IS_TRIANGULAR: bool = true;
+
+    const P2_MAT_ROWS: usize = Self::V_PARAM;
+    const P2_MAT_COLS: usize = Self::O_PARAM;
+    const P2_IS_TRIANGULAR: bool = false;
+
+    const P3_MAT_ROWS: usize = Self::O_PARAM;
+    const P3_MAT_COLS: usize = Self::O_PARAM;
+    const P3_IS_TRIANGULAR: bool = true;
+
+    const L_MAT_ROWS: usize = Self::V_PARAM; // Secret matrix L, part of expanded SK
+    const L_MAT_COLS: usize = Self::O_PARAM;
+    const L_IS_TRIANGULAR: bool = false;
+
+    const O_MAT_ROWS: usize = Self::V_PARAM; // Secret matrix O, part of expanded SK
+    const O_MAT_COLS: usize = Self::O_PARAM;
+    const O_IS_TRIANGULAR: bool = false;
 }
 
-// MAYO-1 parameter set
 pub struct Mayo1;
-
 impl MayoParams for Mayo1 {
-    const M_PARAM: usize = 64;
-    const N_PARAM: usize = 66;
+    const NAME: &'static str = "MAYO_1";
+    const SECURITY_LEVEL: usize = 1;
+    // Core
+    const M_PARAM: usize = 78;
+    const N_PARAM: usize = 86;
     const O_PARAM: usize = 8;
-    const K_PARAM: usize = 9;
-    const KO_PARAM: usize = 72; // k * o
-    
-    const P1_ELEMS_PER_MATRIX: usize = 1711; // (n-o)*(n-o+1)/2 = 58*59/2
-    const P2_ELEMS_PER_MATRIX: usize = 464;  // (n-o)*o = 58*8
-    const P3_ELEMS_PER_MATRIX: usize = 36;   // o*(o+1)/2 = 8*9/2
-    
-    const SALT_BYTES: usize = 32;
-    const DIGEST_BYTES: usize = 32;
+    const K_PARAM: usize = 10;
+    const Q_PARAM: usize = 16;
+    const M_VEC_LIMBS: usize = 5; // ceil(78/16)
+    const F_TAIL: &'static [u8] = &[8, 1, 1, 0]; // F_TAIL_78 from mayo.h
+    // Seeds, salt, digest
     const SK_SEED_BYTES: usize = 24;
     const PK_SEED_BYTES: usize = 16;
-    const O_BYTES: usize = 232; // ((n-o)*o+1)/2
-    const P1_BYTES: usize = 54752; // P1_ELEMS_PER_MATRIX * 4 * 8
-    const P2_BYTES: usize = 14848; // P2_ELEMS_PER_MATRIX * 4 * 8  
-    const P3_BYTES: usize = 1152;  // P3_ELEMS_PER_MATRIX * 4 * 8
-    
-    const CSK_BYTES: usize = 24;
-    const CPK_BYTES: usize = 1168;
-    const SIG_BYTES: usize = 329; // 297 + 32
-    
-    const R_BYTES: usize = 32;
-    const V_BYTES: usize = 29; // ((n-o)+1)/2
-    const O_ELTS: usize = 464; // (n-o)*o
-    const L_BYTES: usize = 14848; // Same as P2_BYTES
-    const ESK_BYTES: usize = Self::SK_SEED_BYTES + Self::O_BYTES + Self::P1_BYTES + Self::L_BYTES;
-    const EPK_BYTES: usize = Self::P1_BYTES + Self::P2_BYTES + Self::P3_BYTES;
-    
-    const P1_MAT_ROWS: usize = 58;
-    const P1_MAT_COLS: usize = 58;
-    const P1_IS_TRIANGULAR: bool = true;
-    const P2_MAT_ROWS: usize = 58;
-    const P2_MAT_COLS: usize = 8;
-    const P2_IS_TRIANGULAR: bool = false;
-    const P3_MAT_ROWS: usize = 8;
-    const P3_MAT_COLS: usize = 8;
-    const P3_IS_TRIANGULAR: bool = true;
-    const L_MAT_ROWS: usize = 58;
-    const L_MAT_COLS: usize = 8;
-    const L_IS_TRIANGULAR: bool = false;
-    
-    fn name() -> &'static str { "MAYO-1" }
-    fn security_level() -> usize { 1 }
+    const SALT_BYTES: usize = 24; // mayo.h MAYO_1_salt_bytes
+    const DIGEST_BYTES: usize = 32; // mayo.h MAYO_1_digest_bytes
+    const R_BYTES: usize = 40; // MAYO_1_r_bytes
+    // Component sizes (from mayo.h, P3_bytes is what's packed in cpk after seed)
+    const CPK_P1_BYTES: usize = 120159; // MAYO_1_P1_bytes (for expanded P1)
+    const CPK_P2_BYTES: usize = 24336;  // MAYO_1_P2_bytes (for expanded P2)
+    const CPK_P3_BYTES: usize = 1404;   // MAYO_1_P3_bytes (for expanded P3)
+    const O_BYTES: usize = 312;        // MAYO_1_O_bytes
+    // Compact keys and signature
+    const CSK_BYTES: usize = 24; // MAYO_1_csk_bytes
+    const CPK_BYTES: usize = 1420; // MAYO_1_cpk_bytes
+    const SIG_BYTES: usize = 454; // MAYO_1_sig_bytes
 }
 
-// MAYO-2 parameter set
 pub struct Mayo2;
-
 impl MayoParams for Mayo2 {
+    const NAME: &'static str = "MAYO_2";
+    const SECURITY_LEVEL: usize = 1; // NIST Level 1, but different params from Mayo1
+    // Core
     const M_PARAM: usize = 64;
-    const N_PARAM: usize = 78;
-    const O_PARAM: usize = 18;
+    const N_PARAM: usize = 81;
+    const O_PARAM: usize = 17;
     const K_PARAM: usize = 4;
-    const KO_PARAM: usize = 72; // k * o
-    
-    const P1_ELEMS_PER_MATRIX: usize = 1830; // (n-o)*(n-o+1)/2 = 60*61/2
-    const P2_ELEMS_PER_MATRIX: usize = 1080; // (n-o)*o = 60*18
-    const P3_ELEMS_PER_MATRIX: usize = 171;  // o*(o+1)/2 = 18*19/2
-    
-    const SALT_BYTES: usize = 32;
-    const DIGEST_BYTES: usize = 32;
+    const Q_PARAM: usize = 16;
+    const M_VEC_LIMBS: usize = 4; // ceil(64/16)
+    const F_TAIL: &'static [u8] = &[8, 0, 2, 8]; // F_TAIL_64 from mayo.h
+    // Seeds, salt, digest
     const SK_SEED_BYTES: usize = 24;
     const PK_SEED_BYTES: usize = 16;
-    const O_BYTES: usize = 540; // ((n-o)*o+1)/2
-    const P1_BYTES: usize = 58560; // P1_ELEMS_PER_MATRIX * 4 * 8
-    const P2_BYTES: usize = 34560; // P2_ELEMS_PER_MATRIX * 4 * 8
-    const P3_BYTES: usize = 5472;  // P3_ELEMS_PER_MATRIX * 4 * 8
-    
+    const SALT_BYTES: usize = 24; // mayo.h MAYO_2_salt_bytes
+    const DIGEST_BYTES: usize = 32; // mayo.h MAYO_2_digest_bytes
+    const R_BYTES: usize = 34; // MAYO_2_r_bytes
+    // Component sizes
+    const CPK_P1_BYTES: usize = 66560;
+    const CPK_P2_BYTES: usize = 34816;
+    const CPK_P3_BYTES: usize = 4896;
+    const O_BYTES: usize = 544;
+    // Compact keys and signature
     const CSK_BYTES: usize = 24;
-    const CPK_BYTES: usize = 2152;
-    const SIG_BYTES: usize = 180; // 148 + 32
-    
-    const R_BYTES: usize = 32;
-    const V_BYTES: usize = 31; // ((n-o)+1)/2
-    const O_ELTS: usize = 1080; // (n-o)*o
-    const L_BYTES: usize = 34560; // Same as P2_BYTES
-    const ESK_BYTES: usize = Self::SK_SEED_BYTES + Self::O_BYTES + Self::P1_BYTES + Self::L_BYTES;
-    const EPK_BYTES: usize = Self::P1_BYTES + Self::P2_BYTES + Self::P3_BYTES;
-    
-    const P1_MAT_ROWS: usize = 60;
-    const P1_MAT_COLS: usize = 60;
-    const P1_IS_TRIANGULAR: bool = true;
-    const P2_MAT_ROWS: usize = 60;
-    const P2_MAT_COLS: usize = 18;
-    const P2_IS_TRIANGULAR: bool = false;
-    const P3_MAT_ROWS: usize = 18;
-    const P3_MAT_COLS: usize = 18;
-    const P3_IS_TRIANGULAR: bool = true;
-    const L_MAT_ROWS: usize = 60;
-    const L_MAT_COLS: usize = 18;
-    const L_IS_TRIANGULAR: bool = false;
-    
-    fn name() -> &'static str { "MAYO-2" }
-    fn security_level() -> usize { 2 }
+    const CPK_BYTES: usize = 4912;
+    const SIG_BYTES: usize = 186;
 }
 
-// MAYO-3 parameter set
 pub struct Mayo3;
-
 impl MayoParams for Mayo3 {
-    const M_PARAM: usize = 96;
-    const N_PARAM: usize = 99;
+    const NAME: &'static str = "MAYO_3";
+    const SECURITY_LEVEL: usize = 3;
+    // Core
+    const M_PARAM: usize = 108;
+    const N_PARAM: usize = 118;
     const O_PARAM: usize = 10;
     const K_PARAM: usize = 11;
-    const KO_PARAM: usize = 110; // k * o
-    
-    const P1_ELEMS_PER_MATRIX: usize = 4005; // (n-o)*(n-o+1)/2 = 89*90/2
-    const P2_ELEMS_PER_MATRIX: usize = 890;  // (n-o)*o = 89*10
-    const P3_ELEMS_PER_MATRIX: usize = 55;   // o*(o+1)/2 = 10*11/2
-    
-    const SALT_BYTES: usize = 32;
-    const DIGEST_BYTES: usize = 32;
+    const Q_PARAM: usize = 16;
+    const M_VEC_LIMBS: usize = 7; // ceil(108/16)
+    const F_TAIL: &'static [u8] = &[8, 0, 1, 7]; // F_TAIL_108 from mayo.h
+    // Seeds, salt, digest
     const SK_SEED_BYTES: usize = 32;
     const PK_SEED_BYTES: usize = 16;
-    const O_BYTES: usize = 445; // ((n-o)*o+1)/2
-    const P1_BYTES: usize = 128160; // P1_ELEMS_PER_MATRIX * 4 * 8
-    const P2_BYTES: usize = 28480;  // P2_ELEMS_PER_MATRIX * 4 * 8
-    const P3_BYTES: usize = 1760;   // P3_ELEMS_PER_MATRIX * 4 * 8
-    
+    const SALT_BYTES: usize = 32; // mayo.h MAYO_3_salt_bytes
+    const DIGEST_BYTES: usize = 48; // mayo.h MAYO_3_digest_bytes
+    const R_BYTES: usize = 55; // MAYO_3_r_bytes
+    // Component sizes
+    const CPK_P1_BYTES: usize = 317844;
+    const CPK_P2_BYTES: usize = 58320;
+    const CPK_P3_BYTES: usize = 2970;
+    const O_BYTES: usize = 540;
+    // Compact keys and signature
     const CSK_BYTES: usize = 32;
-    const CPK_BYTES: usize = 2656;
-    const SIG_BYTES: usize = 266; // 234 + 32
-    
-    const R_BYTES: usize = 32;
-    const V_BYTES: usize = 45; // ((n-o)+1)/2
-    const O_ELTS: usize = 890; // (n-o)*o
-    const L_BYTES: usize = 28480; // Same as P2_BYTES
-    const ESK_BYTES: usize = Self::SK_SEED_BYTES + Self::O_BYTES + Self::P1_BYTES + Self::L_BYTES;
-    const EPK_BYTES: usize = Self::P1_BYTES + Self::P2_BYTES + Self::P3_BYTES;
-    
-    const P1_MAT_ROWS: usize = 89;
-    const P1_MAT_COLS: usize = 89;
-    const P1_IS_TRIANGULAR: bool = true;
-    const P2_MAT_ROWS: usize = 89;
-    const P2_MAT_COLS: usize = 10;
-    const P2_IS_TRIANGULAR: bool = false;
-    const P3_MAT_ROWS: usize = 10;
-    const P3_MAT_COLS: usize = 10;
-    const P3_IS_TRIANGULAR: bool = true;
-    const L_MAT_ROWS: usize = 89;
-    const L_MAT_COLS: usize = 10;
-    const L_IS_TRIANGULAR: bool = false;
-    
-    fn name() -> &'static str { "MAYO-3" }
-    fn security_level() -> usize { 3 }
+    const CPK_BYTES: usize = 2986;
+    const SIG_BYTES: usize = 681;
 }
 
-// MAYO-5 parameter set
 pub struct Mayo5;
-
 impl MayoParams for Mayo5 {
-    const M_PARAM: usize = 128;
-    const N_PARAM: usize = 133;
+    const NAME: &'static str = "MAYO_5";
+    const SECURITY_LEVEL: usize = 5;
+    // Core
+    const M_PARAM: usize = 142;
+    const N_PARAM: usize = 154;
     const O_PARAM: usize = 12;
     const K_PARAM: usize = 12;
-    const KO_PARAM: usize = 144; // k * o
-    
-    const P1_ELEMS_PER_MATRIX: usize = 7381; // (n-o)*(n-o+1)/2 = 121*122/2
-    const P2_ELEMS_PER_MATRIX: usize = 1452; // (n-o)*o = 121*12
-    const P3_ELEMS_PER_MATRIX: usize = 78;   // o*(o+1)/2 = 12*13/2
-    
-    const SALT_BYTES: usize = 32;
-    const DIGEST_BYTES: usize = 32;
+    const Q_PARAM: usize = 16;
+    const M_VEC_LIMBS: usize = 9; // ceil(142/16)
+    const F_TAIL: &'static [u8] = &[4, 0, 8, 1]; // F_TAIL_142 from mayo.h
+    // Seeds, salt, digest
     const SK_SEED_BYTES: usize = 40;
     const PK_SEED_BYTES: usize = 16;
-    const O_BYTES: usize = 726; // ((n-o)*o+1)/2
-    const P1_BYTES: usize = 236192; // P1_ELEMS_PER_MATRIX * 4 * 8
-    const P2_BYTES: usize = 46464;  // P2_ELEMS_PER_MATRIX * 4 * 8
-    const P3_BYTES: usize = 2496;   // P3_ELEMS_PER_MATRIX * 4 * 8
-    
+    const SALT_BYTES: usize = 40; // mayo.h MAYO_5_salt_bytes
+    const DIGEST_BYTES: usize = 64; // mayo.h MAYO_5_digest_bytes
+    const R_BYTES: usize = 72; // MAYO_5_r_bytes
+    // Component sizes
+    const CPK_P1_BYTES: usize = 720863;
+    const CPK_P2_BYTES: usize = 120984;
+    const CPK_P3_BYTES: usize = 5538;
+    const O_BYTES: usize = 852;
+    // Compact keys and signature
     const CSK_BYTES: usize = 40;
-    const CPK_BYTES: usize = 5488;
-    const SIG_BYTES: usize = 838; // 806 + 32
-    
-    const R_BYTES: usize = 32;
-    const V_BYTES: usize = 61; // ((n-o)+1)/2
-    const O_ELTS: usize = 1452; // (n-o)*o
-    const L_BYTES: usize = 46464; // Same as P2_BYTES
-    const ESK_BYTES: usize = Self::SK_SEED_BYTES + Self::O_BYTES + Self::P1_BYTES + Self::L_BYTES;
-    const EPK_BYTES: usize = Self::P1_BYTES + Self::P2_BYTES + Self::P3_BYTES;
-    
-    const P1_MAT_ROWS: usize = 121;
-    const P1_MAT_COLS: usize = 121;
-    const P1_IS_TRIANGULAR: bool = true;
-    const P2_MAT_ROWS: usize = 121;
-    const P2_MAT_COLS: usize = 12;
-    const P2_IS_TRIANGULAR: bool = false;
-    const P3_MAT_ROWS: usize = 12;
-    const P3_MAT_COLS: usize = 12;
-    const P3_IS_TRIANGULAR: bool = true;
-    const L_MAT_ROWS: usize = 121;
-    const L_MAT_COLS: usize = 12;
-    const L_IS_TRIANGULAR: bool = false;
-    
-    fn name() -> &'static str { "MAYO-5" }
-    fn security_level() -> usize { 5 }
+    const CPK_BYTES: usize = 5554;
+    const SIG_BYTES: usize = 964;
 }
 
-// Default to MAYO-1 for backward compatibility
-pub use Mayo1 as DefaultParams;
+// Default to MAYO-1 for any legacy code that might not be generic yet.
+pub type DefaultParams = Mayo1;
 
-// Re-export constants for backward compatibility
-pub const M_PARAM: usize = Mayo1::M_PARAM;
-pub const N_PARAM: usize = Mayo1::N_PARAM;
-pub const O_PARAM: usize = Mayo1::O_PARAM;
-pub const K_PARAM: usize = Mayo1::K_PARAM;
-pub const KO_PARAM: usize = Mayo1::KO_PARAM;
-pub const P1_ELEMS_PER_MATRIX: usize = Mayo1::P1_ELEMS_PER_MATRIX;
-pub const P2_ELEMS_PER_MATRIX: usize = Mayo1::P2_ELEMS_PER_MATRIX;
-pub const P3_ELEMS_PER_MATRIX: usize = Mayo1::P3_ELEMS_PER_MATRIX;
-pub const SALT_BYTES: usize = Mayo1::SALT_BYTES;
-pub const DIGEST_BYTES: usize = Mayo1::DIGEST_BYTES;
-pub const SK_SEED_BYTES: usize = Mayo1::SK_SEED_BYTES;
-pub const PK_SEED_BYTES: usize = Mayo1::PK_SEED_BYTES;
-pub const O_BYTES: usize = Mayo1::O_BYTES;
-pub const P1_BYTES: usize = Mayo1::P1_BYTES;
-pub const P2_BYTES: usize = Mayo1::P2_BYTES;
-pub const P3_BYTES: usize = Mayo1::P3_BYTES;
-pub const CSK_BYTES: usize = Mayo1::CSK_BYTES;
-pub const CPK_BYTES: usize = Mayo1::CPK_BYTES;
-pub const SIG_BYTES: usize = Mayo1::SIG_BYTES;
-pub const R_BYTES: usize = Mayo1::R_BYTES;
-pub const V_BYTES: usize = Mayo1::V_BYTES;
-pub const O_ELTS: usize = Mayo1::O_ELTS;
-pub const L_BYTES: usize = Mayo1::L_BYTES;
-pub const ESK_BYTES: usize = Mayo1::ESK_BYTES;
-pub const EPK_BYTES: usize = Mayo1::EPK_BYTES;
-pub const P1_MAT_ROWS: usize = Mayo1::P1_MAT_ROWS;
-pub const P1_MAT_COLS: usize = Mayo1::P1_MAT_COLS;
-pub const P1_IS_TRIANGULAR: bool = Mayo1::P1_IS_TRIANGULAR;
-pub const P2_MAT_ROWS: usize = Mayo1::P2_MAT_ROWS;
-pub const P2_MAT_COLS: usize = Mayo1::P2_MAT_COLS;
-pub const P2_IS_TRIANGULAR: bool = Mayo1::P2_IS_TRIANGULAR;
-pub const P3_MAT_ROWS: usize = Mayo1::P3_MAT_ROWS;
-pub const P3_MAT_COLS: usize = Mayo1::P3_MAT_COLS;
-pub const P3_IS_TRIANGULAR: bool = Mayo1::P3_IS_TRIANGULAR;
-pub const L_MAT_ROWS: usize = Mayo1::L_MAT_ROWS;
-pub const L_MAT_COLS: usize = Mayo1::L_MAT_COLS;
-pub const L_IS_TRIANGULAR: bool = Mayo1::L_IS_TRIANGULAR;
+// Re-export constants from DefaultParams for backward compatibility if any code used them directly.
+// It's better to use generic functions with P: MayoParams.
+pub const M_PARAM: usize = DefaultParams::M_PARAM;
+pub const N_PARAM: usize = DefaultParams::N_PARAM;
+pub const O_PARAM: usize = DefaultParams::O_PARAM;
+pub const K_PARAM: usize = DefaultParams::K_PARAM;
+// Add other re-exports if necessary, but ideally, they should not be used.
+pub const CSK_BYTES: usize = DefaultParams::CSK_BYTES;
+pub const CPK_BYTES: usize = DefaultParams::CPK_BYTES;
+pub const SIG_BYTES: usize = DefaultParams::SIG_BYTES;

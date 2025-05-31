@@ -4,7 +4,7 @@ use std::ops::Add;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Vector {
-    elements: Vec<F16>,
+    pub elements: Vec<F16>, // Made public
 }
 
 impl Vector {
@@ -93,6 +93,23 @@ impl Vector {
             elements.push(F16::decode_f16(nibble));
         }
         Ok(Vector::new(elements))
+    }
+
+    // Computes the dot product of two vectors
+    pub fn dot_product(&self, rhs: &Self) -> Result<F16, String> {
+        if self.len() != rhs.len() {
+            return Err(String::from("Dot product requires vectors of the same length."));
+        }
+        if self.is_empty() {
+            // Or handle as an error, or define behavior. Sum of zero terms is typically zero.
+            return Ok(F16::new(0));
+        }
+        let mut acc = F16::new(0);
+        for i in 0..self.len() {
+            // These unwraps are safe due to the len check and loop bounds.
+            acc = acc + (self.elements[i] * rhs.elements[i]);
+        }
+        Ok(acc)
     }
 }
 
@@ -271,5 +288,45 @@ mod tests {
         let encoded2 = v2.encode_vec();
         let decoded2 = Vector::decode_vec(v2.len(), &encoded2).unwrap();
         assert_eq!(v2, decoded2);
+    }
+
+    #[test]
+    fn test_vector_dot_product() {
+        let v1 = Vector::new(f16v(&[1, 2, 3]));
+        let v2 = Vector::new(f16v(&[4, 5, 6]));
+        // 1*4 = 4 (0100)
+        // 2*5 = x*(x^2+1) = x^3+x = 8+2 = 10 (1010)
+        // 3*6 = (x+1)(x^2+x) = x^3+x^2+x^2+x = x^3+2x^2+x = x^3+x = 10 (1010)
+        // Sum = 4 ^ 10 ^ 10 = 4 (0100)
+        let expected = F16::new(4);
+        assert_eq!(v1.dot_product(&v2).unwrap(), expected);
+
+        let v3 = Vector::new(f16v(&[7, 8]));
+        let v4 = Vector::new(f16v(&[9, 10]));
+        // 7*9 = (x^2+x+1)(x^3+1) = x^5+x^4+x^3 + x^2+x+1
+        // x^5 = x^2+x
+        // x^4 = x+1
+        // -> (x^2+x) + (x+1) + x^3 + x^2+x+1 = x^3+x (10)
+        // 8*10 = x^3 * (x^3+x) = x^6+x^4
+        // x^6 = x^3+x^2
+        // x^4 = x+1
+        // -> (x^3+x^2) + (x+1) = x^3+x^2+x+1 (15)
+        // Sum = 10 ^ 15 = 5
+        let expected2 = F16::new(5);
+        assert_eq!(v3.dot_product(&v4).unwrap(), expected2);
+    }
+
+    #[test]
+    fn test_vector_dot_product_empty() {
+        let v1 = Vector::new(f16v(&[]));
+        let v2 = Vector::new(f16v(&[]));
+        assert_eq!(v1.dot_product(&v2).unwrap(), F16::new(0));
+    }
+
+    #[test]
+    fn test_vector_dot_product_mismatch_len() {
+        let v1 = Vector::new(f16v(&[1, 2]));
+        let v2 = Vector::new(f16v(&[1, 2, 3]));
+        assert!(v1.dot_product(&v2).is_err());
     }
 }

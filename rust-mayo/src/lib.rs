@@ -2,6 +2,8 @@
 pub mod f16;
 pub mod vector;
 pub mod matrix;
+pub mod mvector;
+pub mod mayo_operations;
 pub mod encoding;
 pub mod params; // Add this line
 pub mod crypto; // Add new module for crypto functions

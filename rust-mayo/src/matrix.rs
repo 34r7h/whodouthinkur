@@ -132,6 +132,202 @@ impl Matrix {
             cols,
         })
     }
+
+    // Matrix-vector multiplication: result_vec = self * vector
+    pub fn multiply_vector(&self, vector: &Vector) -> Result<Vector, String> {
+        if self.cols != vector.len() {
+            return Err(format!(
+                "Matrix-vector multiplication error: Matrix cols ({}) must equal vector length ({}).",
+                self.cols, vector.len()
+            ));
+        }
+        let mut result_elements = Vec::with_capacity(self.rows);
+        for r in 0..self.rows {
+            let mut sum = F16::new(0);
+            for c in 0..self.cols {
+                // self.get(r,c) and vector.get(c) should not panic due to checks and loop bounds
+                sum = sum + (self.get(r, c).unwrap() * vector.get(c).unwrap());
+            }
+            result_elements.push(sum);
+        }
+        Ok(Vector::new(result_elements))
+    }
+
+    // Public method for scalar multiplication
+    pub fn multiply_scalar(&self, scalar: F16) -> Matrix {
+        let mut new_elements = Vec::with_capacity(self.elements.len());
+        for &elem in self.elements.iter() {
+            new_elements.push(elem * scalar);
+        }
+        Matrix {
+            elements: new_elements,
+            rows: self.rows,
+            cols: self.cols,
+        }
+    }
+
+    // Helper: Swaps two rows in the matrix
+    fn swap_rows(&mut self, r1: usize, r2: usize) {
+        if r1 < self.rows && r2 < self.rows && r1 != r2 {
+            for c in 0..self.cols {
+                self.elements.swap(r1 * self.cols + c, r2 * self.cols + c);
+            }
+        }
+    }
+
+    // Helper: Multiplies a row by a scalar
+    fn multiply_row_by_scalar(&mut self, row_idx: usize, scalar: F16) {
+        if row_idx < self.rows {
+            for c in 0..self.cols {
+                let current_val = self.elements[row_idx * self.cols + c];
+                self.elements[row_idx * self.cols + c] = current_val * scalar;
+            }
+        }
+    }
+
+    // Helper: Adds scalar * source_row to target_row
+    // In GF(16), addition and subtraction are XOR. So row[target] += scalar * row[source]
+    // is row[target] = row[target] + scalar * row[source]
+    fn add_multiple_of_row_to_another(&mut self, target_row_idx: usize, source_row_idx: usize, scalar: F16) {
+        if target_row_idx < self.rows && source_row_idx < self.rows {
+            for c in 0..self.cols {
+                let val_to_add = self.elements[source_row_idx * self.cols + c] * scalar;
+                self.elements[target_row_idx * self.cols + c] = self.elements[target_row_idx * self.cols + c] + val_to_add;
+            }
+        }
+    }
+
+    // Transforms the augmented matrix [self | rhs_vector] into row echelon form.
+    // Modifies self (the matrix A) and rhs_vector (the vector y) in place.
+    // Returns the rank of the matrix.
+    // This is a key part of solving Ax = y.
+    pub fn transform_to_row_echelon_augmented(&mut self, rhs_vector: &mut Vector) -> Result<usize, String> {
+        if self.rows != rhs_vector.len() {
+            return Err("Matrix rows must match rhs_vector length for augmented system.".to_string());
+        }
+
+        let mut pivot_row = 0;
+        let mut rank = 0;
+
+        for j in 0..self.cols { // Current column to find pivot in
+            if pivot_row >= self.rows {
+                break; // No more rows to pivot
+            }
+
+            // Find a row with a non-zero pivot in column j, starting from pivot_row
+            let mut i = pivot_row;
+            while i < self.rows && self.get(i, j).unwrap() == F16::new(0) {
+                i += 1;
+            }
+
+            if i < self.rows { // Found a non-zero pivot at (i, j)
+                // Swap row i with pivot_row to bring pivot to (pivot_row, j)
+                if i != pivot_row {
+                    self.swap_rows(i, pivot_row);
+                    rhs_vector.elements.swap(i, pivot_row); // Keep rhs_vector consistent
+                }
+
+                // Normalize pivot row: make pivot element self.get(pivot_row, j) equal to 1
+                let pivot_val = self.get(pivot_row, j).unwrap();
+                if let Some(inv_pivot) = pivot_val.inverse() {
+                    self.multiply_row_by_scalar(pivot_row, inv_pivot);
+                    // rhs_vector.elements is not public, so we need a method in Vector or direct access if in same module.
+                    // Assuming Vector elements can be accessed and modified like this for now.
+                    // If Vector::elements is private, rhs_vector.multiply_element(pivot_row, inv_pivot) would be needed.
+                    let old_rhs_val = rhs_vector.get(pivot_row).unwrap(); // Assuming Vector::get() exists
+                    rhs_vector.elements[pivot_row] = old_rhs_val * inv_pivot;
+
+
+                } else {
+                    // Should not happen if pivot_val was non-zero, but good for robustness
+                    return Err(format!("Pivot element {} at ({},{}) has no inverse.", pivot_val.value(), pivot_row, j));
+                }
+
+                // Eliminate other rows: for every other row k != pivot_row,
+                // make self.get(k, j) zero by row_k = row_k - self.get(k,j) * row_pivot_row
+                for k in 0..self.rows {
+                    if k != pivot_row {
+                        let factor = self.get(k, j).unwrap();
+                        if factor != F16::new(0) { // Only if there's something to eliminate
+                            self.add_multiple_of_row_to_another(k, pivot_row, factor);
+                            // rhs_vector.elements[k] = rhs_vector.elements[k] + (factor * rhs_vector.elements[pivot_row]);
+                            // Need to use .get() for rhs_vector as well, if elements is private
+                            let val_to_add_to_rhs = factor * rhs_vector.get(pivot_row).unwrap();
+                            let current_rhs_k = rhs_vector.get(k).unwrap();
+                            rhs_vector.elements[k] = current_rhs_k + val_to_add_to_rhs;
+                        }
+                    }
+                }
+                rank += 1;
+                pivot_row += 1;
+            }
+        }
+        Ok(rank)
+    }
+
+    // Solves for x in Ax = y, assuming A (self) is already in row echelon form
+    // and y (rhs_vector) has been transformed accordingly.
+    // Returns a particular solution vector x.
+    // Assumes that the system is consistent (checked by rank from REF transformation).
+    // Free variables are set to 0 for this particular solution.
+    pub fn solve_from_row_echelon(&self, rhs_vector: &Vector) -> Result<Vector, String> {
+        if self.rows != rhs_vector.len() {
+            return Err("Matrix rows must match rhs_vector length.".to_string());
+        }
+
+        let num_vars = self.cols;
+        let mut solution = Vector::zero(num_vars);
+
+        // Start from the last non-zero row (based on typical REF)
+        // and go upwards. A more robust way is to iterate from self.rows - 1 down to 0.
+        for i in (0..self.rows).rev() {
+            // Find the pivot column for this row i (first non-zero element)
+            let mut pivot_col: Option<usize> = None;
+            for j in 0..self.cols {
+                if self.get(i, j).unwrap() != F16::new(0) {
+                    pivot_col = Some(j);
+                    break;
+                }
+            }
+
+            if let Some(pc) = pivot_col {
+                // This row has a pivot.
+                // The equation is: self[i, pc]*x[pc] + sum(self[i, k]*x[k] for k > pc) = rhs_vector[i]
+                // Since self[i, pc] should be 1 after REF normalization:
+                // x[pc] = rhs_vector[i] - sum(self[i, k]*x[k] for k > pc)
+                let mut sum_known_terms = F16::new(0);
+                for k in (pc + 1)..num_vars {
+                    sum_known_terms = sum_known_terms + (self.get(i, k).unwrap() * solution.elements[k]);
+                }
+
+                // Assuming pivot element self.get(i,pc) is 1 after REF
+                if self.get(i,pc).unwrap() != F16::new(1) {
+                    // This case implies REF was not properly normalized or it's a zero row that
+                    // should not be processed for a pivot.
+                    // If it's a zero row in A but rhs_vector[i] is non-zero, it's inconsistent.
+                    // This check should ideally be part of REF or before calling solve.
+                    if rhs_vector.elements[i] != F16::new(0) {
+                         return Err(format!("Inconsistent system: zero row in matrix for non-zero RHS at row {}.", i));
+                    }
+                    // If both are zero, this row is 0=0, continue (free variables might be involved implicitly)
+                    continue;
+                }
+
+                solution.elements[pc] = rhs_vector.elements[i] + sum_known_terms; // Using + for - in GF(2^k)
+            } else {
+                // This is a zero row in the matrix A for row i.
+                // If rhs_vector[i] is non-zero, the system is inconsistent.
+                if rhs_vector.elements[i] != F16::new(0) {
+                    return Err(format!("Inconsistent system: zero row in matrix for non-zero RHS at row {}.", i));
+                }
+                // If rhs_vector[i] is zero, it's a 0=0 equation, meaning this row
+                // doesn't constrain variables further. Any variables not yet determined
+                // (typically those without pivots in their columns) are free.
+                // For a particular solution, we set them to 0, which is already done by Vector::zero.
+            }
+        }
+        Ok(solution)
+    }
 }
 
 // Matrix Addition
@@ -188,6 +384,11 @@ impl std::ops::Mul for &Matrix {
 mod tests {
     use super::*;
     use crate::f16::F16;
+    use crate::vector::Vector; // Ensure Vector is imported for tests
+
+    fn f16v(vals: &[u8]) -> Vec<F16> { // Local helper for tests
+        vals.iter().map(|&x| F16::new(x)).collect()
+    }
 
     fn f16m(r: usize, c: usize, vals: &[u8]) -> Matrix {
         Matrix::new(r, c, vals.iter().map(|&x| F16::new(x)).collect()).unwrap()
@@ -346,5 +547,254 @@ mod tests {
 
         let decoded = Matrix::decode_o(rows, cols, &encoded).unwrap();
         assert_eq!(m, decoded);
+    }
+
+    #[test]
+    fn test_matrix_vector_mul() {
+        // M = [[1,2],[3,4]]
+        // V = [2,1]
+        let m = f16m(2,2, &[1,2,3,4]);
+        let v = Vector::new(f16v(&[2,1])); // Use local helper
+        // Expected:
+        // R[0] = (1*2) + (2*1) = F16(2) + F16(2) = F16(0)
+        // R[1] = (3*2) + (4*1) = F16(6) + F16(4) = F16(2)
+        let expected = Vector::new(f16v(&[0,2])); // Use local helper
+        assert_eq!(m.multiply_vector(&v).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_matrix_vector_mul_fail_dim() {
+        let m = f16m(2,2, &[1,2,3,4]);
+        let v = Vector::new(f16v(&[1,2,3])); // Incorrect length; Use local helper
+        assert!(m.multiply_vector(&v).is_err());
+    }
+
+    #[test]
+    fn test_matrix_scalar_mul() {
+        let m = f16m(2,2, &[1,2,3,4]);
+        let s = F16::new(2); // x
+        // Expected:
+        // 1*x = 2 (x)
+        // 2*x = 4 (x^2)
+        // 3*x = 6 (x+x^0)*x = x^2+x
+        // 4*x = 8 (x^2)*x = x^3
+        let expected = f16m(2,2, &[2,4,6,8]);
+        assert_eq!(m.multiply_scalar(s), expected);
+    }
+
+    #[test]
+    fn test_swap_rows_impl() {
+        let mut m = f16m(2,2, &[1,2,3,4]);
+        m.swap_rows(0,1);
+        assert_eq!(m, f16m(2,2, &[3,4,1,2]));
+
+        let mut m2 = f16m(3,2, &[1,2,3,4,5,6]);
+        m2.swap_rows(0,2);
+        assert_eq!(m2, f16m(3,2, &[5,6,3,4,1,2]));
+        m2.swap_rows(0,0); // No change
+        assert_eq!(m2, f16m(3,2, &[5,6,3,4,1,2]));
+    }
+
+    #[test]
+    fn test_multiply_row_by_scalar_impl() {
+        let mut m = f16m(2,2, &[1,2,3,4]);
+        m.multiply_row_by_scalar(0, F16::new(2)); // Row 0 *= 2
+        // 1*2=2, 2*2=4
+        assert_eq!(m, f16m(2,2, &[2,4,3,4]));
+    }
+
+    #[test]
+    fn test_add_multiple_of_row_to_another_impl() {
+        let mut m = f16m(2,2, &[1,1,1,0]); // R0=[1,1], R1=[1,0]
+        // R1 = R1 + 1*R0
+        // R1[0] = 1 + 1*1 = 0
+        // R1[1] = 0 + 1*1 = 1
+        m.add_multiple_of_row_to_another(1,0,F16::new(1));
+        assert_eq!(m, f16m(2,2, &[1,1,0,1]));
+    }
+
+    #[test]
+    fn test_to_row_echelon_square_invertible() {
+        let mut a = f16m(2,2, &[1,1,1,0]); // A = [[1,1],[1,0]]
+        let mut y_elems = f16v(&[1,0]);
+        let mut y = Vector::new(y_elems);
+        // Expected REF of A: [[1,0],[0,1]] (identity)
+        // System:
+        // 1*x0 + 1*x1 = 1
+        // 1*x0 + 0*x1 = 0
+        // From second eq: x0 = 0.
+        // Substitute into first: 0 + x1 = 1 => x1 = 1.
+        // Solution: x0=0, x1=1.
+        // After REF, system should be:
+        // 1*x0 + 0*x1 = 0
+        // 0*x0 + 1*x1 = 1
+        // So transformed y should be [0,1]^T
+        let rank = a.transform_to_row_echelon_augmented(&mut y).unwrap();
+        assert_eq!(rank, 2);
+        assert_eq!(a, Matrix::identity(2)); // A becomes I
+        assert_eq!(y, Vector::new(f16v(&[0,1]))); // y becomes solution [0,1]
+    }
+
+    #[test]
+    fn test_to_row_echelon_3x3() {
+        // Example from a field other than GF(16) for simplicity of setup,
+        // but logic is field-agnostic.
+        // A = [[2,1,-1],[ -3,-1,2],[ -2,1,2]] y = [8, -11, -3]
+        // REF A = [[1,0,0],[0,1,0],[0,0,1]] y_transformed = [2,3,-1] (Solution)
+        // Using GF(16) values:
+        // A = [[1,2,3],[2,3,1],[3,1,2]]
+        // y = [1,2,3]
+        let mut a = f16m(3,3, &[1,2,3, 2,3,1, 3,1,2]);
+        let mut y = Vector::new(f16v(&[1,2,3]));
+
+        let rank = a.transform_to_row_echelon_augmented(&mut y).unwrap();
+        assert_eq!(rank, 3); // Expect full rank
+
+        // Check if 'a' is identity (or whatever REF it should be)
+        // This requires knowing the expected REF form and transformed y.
+        // For a full rank square matrix, REF is Identity.
+        // A * x = y  => I * x = A_inv * y
+        // The y vector gets transformed to A_inv * y which is the solution x.
+        assert_eq!(a, Matrix::identity(3));
+
+        // To find the expected y, we need to solve the original system:
+        // x0 + 2x1 + 3x2 = 1
+        // 2x0 + 3x1 +  x2 = 2
+        // 3x0 +  x1 + 2x2 = 3
+        // (Calculations for GF(16) are non-trivial to do by hand here for expected y)
+        // Let's use a known simple one:
+        // A = [[1,1,0],[0,1,1],[1,0,1]] y = [1,1,0] -> x=[0,1,0] (expected y_transformed)
+        let mut a2 = f16m(3,3, &[1,1,0, 0,1,1, 1,0,1]);
+        let mut y2 = Vector::new(f16v(&[1,1,0]));
+        let rank2 = a2.transform_to_row_echelon_augmented(&mut y2).unwrap();
+        assert_eq!(rank2, 3);
+        assert_eq!(a2, Matrix::identity(3));
+        assert_eq!(y2, Vector::new(f16v(&[0,1,0])));
+    }
+
+    #[test]
+    fn test_to_row_echelon_rank_deficient() {
+        // A = [[1,1,1],[1,1,1],[0,0,1]] y = [1,1,0]
+        // R1 = R1 - R0 => [[1,1,1],[0,0,0],[0,0,1]] y = [1,0,0]
+        // Swap R1, R2 => [[1,1,1],[0,0,1],[0,0,0]] y = [1,0,0]
+        // R0 = R0 - R1 => [[1,1,0],[0,0,1],[0,0,0]] y = [1,0,0]
+        // Rank = 2
+        let mut a = f16m(3,3, &[1,1,1, 1,1,1, 0,0,1]);
+        let mut y = Vector::new(f16v(&[1,1,0]));
+        let rank = a.transform_to_row_echelon_augmented(&mut y).unwrap();
+        assert_eq!(rank, 2);
+        let expected_a_ref = f16m(3,3, &[1,1,0, 0,0,1, 0,0,0]);
+        let expected_y_transformed = Vector::new(f16v(&[1,0,0]));
+        assert_eq!(a, expected_a_ref);
+        assert_eq!(y, expected_y_transformed);
+    }
+
+    #[test]
+    fn test_to_row_echelon_already_ref() {
+        let mut a = f16m(2,3, &[1,2,3, 0,1,4]); // REF
+        let mut y = Vector::new(f16v(&[5,6]));
+
+        let mut a_clone = a.clone(); // clone before modification
+        let mut y_clone = y.clone();
+
+        let rank = a.transform_to_row_echelon_augmented(&mut y).unwrap();
+        assert_eq!(rank, 2);
+        // Should normalize rows but structure largely same.
+        // R0 = R0 - 2*R1 = [1,2,3] - 2*[0,1,4] = [1,2,3] - [0,2,8] = [1,0,3^8=B]
+        // y_new[0] = 5 - 2*6 = 5 - 12 = 5 - C = 5^C = 9
+        // y_new[1] = 6 (no change as R1 pivot already 1, and no rows below it)
+        // This test's manual REF calculation needs to be precise.
+        // The provided code normalizes the pivot row first, then eliminates others.
+        // 1. Pivot (0,0) is 1.
+        //    No rows below to eliminate for this pivot column.
+        // 2. Pivot (1,1) is 1. (pivot_row = 1, j = 1)
+        //    Eliminate R0: R0 = R0 - self.get(0,1)*R1 = R0 - 2*R1
+        //    a[0,:] = [1,2,3] - 2*[0,1,4] = [1,2,3] - [0,2,8] = [1,0,11] (3^8 = B)
+        //    y[0]   = 5 - 2*6 = 5 - 12 = 9
+
+        // Expected A after full REF:
+        // [[1,0,11],
+        //  [0,1, 4]]
+        // Expected y after:
+        // [9,6]
+
+        let expected_a_ref = f16m(2,3, &[1,0,11, 0,1,4]);
+        let expected_y_transformed = Vector::new(f16v(&[9,6]));
+
+        assert_eq!(a, expected_a_ref);
+        assert_eq!(y, expected_y_transformed);
+    }
+
+    #[test]
+    fn test_solve_from_ref_square_invertible() {
+        // From test_to_row_echelon_square_invertible:
+        // A = [[1,1],[1,0]], y = [1,0]^T
+        // REF A: [[1,0],[0,1]] (identity)
+        // Transformed y: [0,1]^T
+        let a_ref = Matrix::identity(2);
+        let y_transformed = Vector::new(f16v(&[0,1]));
+        // Expected solution: x = [0,1]^T
+        let solution = a_ref.solve_from_row_echelon(&y_transformed).unwrap();
+        assert_eq!(solution, Vector::new(f16v(&[0,1])));
+    }
+
+    #[test]
+    fn test_solve_from_ref_3x3() {
+        // A = [[1,1,1],[0,1,1],[1,0,1]] y = [1,0,0]
+        // From a previous test, REF A could be I, transformed y would be the solution.
+        // Let's use the example from test_to_row_echelon_3x3
+        // A_orig = [[1,1,0],[0,1,1],[1,0,1]] y = [1,1,0] -> x=[0,1,0]
+        // This was the actual test case:
+        let mut a = f16m(3,3, &[1,1,0, 0,1,1, 1,0,1]);
+        let mut y = Vector::new(f16v(&[1,1,0]));
+        a.transform_to_row_echelon_augmented(&mut y).unwrap(); // a is I, y is [0,1,0]
+
+        let solution = a.solve_from_row_echelon(&y).unwrap();
+        assert_eq!(solution, Vector::new(f16v(&[0,1,0]))); // solution should be y itself
+    }
+
+    #[test]
+    fn test_solve_from_ref_rank_deficient_consistent() {
+        // From test_to_row_echelon_rank_deficient:
+        // A = [[1,1,1],[1,1,1],[0,0,1]] y = [1,1,0]
+        // REF A: [[1,1,0],[0,0,1],[0,0,0]]
+        // Transformed y: [1,0,0]
+        let a_ref = f16m(3,3, &[1,1,0, 0,0,1, 0,0,0]);
+        let y_transformed = Vector::new(f16v(&[1,0,0]));
+        // System from REF:
+        // 1*x0 + 1*x1 + 0*x2 = 1  => x0 + x1 = 1
+        // 0*x0 + 0*x1 + 1*x2 = 0  => x2 = 0
+        // 0*x0 + 0*x1 + 0*x2 = 0
+        // Set free var x1 = 0. Then x0 = 1. x2 = 0. Solution [1,0,0]
+
+        // Last row (i=2): pivot_col = None. rhs_vector.elements[2] (y_transformed[2]) is 0. OK.
+        // Row i=1: pivot_col = Some(2). self.get(1,2) is 1.
+        //   sum_known_terms (k from 3 to 2): loop doesn't run, sum = 0.
+        //   solution.elements[2] = y_transformed.elements[1] + 0 = 0.  So x2=0.
+        // Row i=0: pivot_col = Some(0). self.get(0,0) is 1.
+        //   sum_known_terms (k from 1 to 2):
+        //     k=1: self.get(0,1)*solution.elements[1] = 1 * (initially 0, x1 is free) = 0
+        //     k=2: self.get(0,2)*solution.elements[2] = 0 * (0 from above) = 0
+        //   sum = 0.
+        //   solution.elements[0] = y_transformed.elements[0] + 0 = 1. So x0=1.
+        // Resulting solution with free x1=0: [1,0,0]
+        let solution = a_ref.solve_from_row_echelon(&y_transformed).unwrap();
+        assert_eq!(solution, Vector::new(f16v(&[1,0,0])));
+    }
+
+    #[test]
+    fn test_solve_from_ref_inconsistent() {
+        // A = [[1,1],[0,0]] y = [1,1]
+        // REF A: [[1,1],[0,0]]
+        // Transformed y: [1,1] (from previous test_to_row_echelon_augmented)
+        let a_ref = f16m(2,2, &[1,1,0,0]);
+        let y_transformed = Vector::new(f16v(&[1,1]));
+        // System: x0+x1=1, 0=1 (inconsistent from y_transformed[1])
+
+        let result = a_ref.solve_from_row_echelon(&y_transformed);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(e.contains("Inconsistent system: zero row in matrix for non-zero RHS at row 1."));
+        }
     }
 }
