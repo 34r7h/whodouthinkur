@@ -289,4 +289,4 @@ async function main() {
     });
 }
 
-main().catch(console.error); console.log('Debug: current key bytes length:', currentPkBytes?.length);
+main().catch(console.error);

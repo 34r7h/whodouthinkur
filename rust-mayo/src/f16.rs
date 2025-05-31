@@ -1,5 +1,5 @@
 // rust-mayo/src/f16.rs
-use std::ops::{Add, Sub, Mul};
+use std::ops::{Add, Sub, Mul, Div};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct F16(pub u8); // Inner u8 stores the value 0-15
@@ -81,6 +81,22 @@ impl Mul for F16 {
             b >>= 1; // Consider next bit of b
         }
         F16::new(res) // Mask to ensure final result is 4 bits
+    }
+}
+
+impl Div for F16 {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        if rhs.0 == 0 {
+            panic!("Division by zero in F16");
+        }
+        // Division in finite field: a / b = a * b^(-1)
+        if let Some(inv) = rhs.inverse() {
+            self * inv
+        } else {
+            panic!("Division by zero in F16");
+        }
     }
 }
 

@@ -1,1 +1,0 @@
-const keys = generate_mayo_keypair('MAYO-1'); console.log('PK length:', keys[1].length, 'bytes'); console.log('PK hex:', Array.from(keys[1], b => b.toString(16).padStart(2, '0')).join('').slice(-40));
