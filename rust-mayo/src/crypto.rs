@@ -28,16 +28,18 @@ pub enum CryptoError {
     VerificationError,
     InvalidKeyLength,
     ParameterError(String), // For errors from parameter validation or consistency checks
+    SigningErrorWithMsg(String), // Add this if not present
 }
 
 impl fmt::Display for CryptoError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             CryptoError::KeyGenerationError => write!(f, "Key generation failed"),
-            CryptoError::SigningError => write!(f, "Signing failed"),
+            CryptoError::SigningError => write!(f, "Signing general error"), // Clarify generic signing error
             CryptoError::VerificationError => write!(f, "Verification failed"),
             CryptoError::InvalidKeyLength => write!(f, "Invalid key length"),
             CryptoError::ParameterError(s) => write!(f, "Parameter error: {}", s),
+            CryptoError::SigningErrorWithMsg(s) => write!(f, "Signing error: {}", s), // Add this
         }
     }
 }

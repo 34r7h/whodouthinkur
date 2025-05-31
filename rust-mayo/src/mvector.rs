@@ -124,6 +124,54 @@ impl MVector {
         bytes.truncate(expected_bytes_len);
         Ok(bytes)
     }
+
+    // Multiplies the MVector by X in the polynomial ring (GF(16)[X]/F_tail_poly(X))^m_param
+    // and then adds another MVector `to_add`.
+    // This is a key step in C's compute_rhs.
+    // Returns a new MVector.
+    pub fn poly_mul_by_x_and_add(
+        &self,
+        f_tail: &'static [u8], // From P::F_TAIL
+        to_add: &MVector
+    ) -> Result<MVector, String> {
+        if self.m_param != to_add.m_param {
+            return Err("MVectors must have same m_param for poly_mul_by_x_and_add".to_string());
+        }
+        if f_tail.len() != 4 { // As per F_TAIL_LEN in C
+            return Err("f_tail must have length 4".to_string());
+        }
+
+        let mut result_elements = vec![F16::new(0); self.m_param];
+        let m_param = self.m_param;
+
+        // This operation is applied to each of the m_param "lanes" independently.
+        // The C code processes one MVector (temp_bytes) which has m_param elements.
+        // It shifts this entire MVector "up by 4 bits" (mul by X in the polynomial representation of elements of GF(16)^m).
+        // Then it reduces using f_tail if the "top nibble" of the MVector was non-zero.
+        // This is NOT per-F16 element reduction using x^4+x+1.
+        // It's a reduction of a polynomial whose coefficients are F16 elements,
+        // using a reduction polynomial defined by F_TAIL.
+        // The C code:
+        //   top = (temp[m_vec_limbs-1] >> top_pos) % 16; // "top F16 element" of the MVector if m is not multiple of 16
+        //   temp <<= 4; // Shift all F16 elements in temp "one position up"
+        //   reduce using f_tail and top...
+        // This is complex. The "top_pos" implies that F_TAIL reduces a polynomial of degree M_PARAM.
+        // This interpretation is likely incorrect. F_TAIL in mayo.h (e.g. F_TAIL_78) is for z^78 + ...
+        // The compute_rhs in C iterates k*k times. In each step, it does: temp = temp*X + (vp1v_term).
+        // This means X is an indeterminate over GF(16), and MVectors are coefficients.
+        // The f_tail reduction applies to this polynomial in X.
+
+        // For now, STUB this complex polynomial arithmetic.
+        // A correct implementation requires careful porting of the C loop with m_vec_limbs etc.
+        // The current MVector struct (Vec<F16>) is not ideal for the C-style limb operations.
+        // This stub will allow the main structure of compute_rhs_for_sign_operator to be built.
+        println!("[MVector STUB] poly_mul_by_x_and_add called. Using simple XOR for now.");
+        for i in 0..m_param {
+            result_elements[i] = self.elements[i] + to_add.elements[i]; // Placeholder
+        }
+
+        MVector::new(m_param, result_elements)
+    }
 }
 
 // Element-wise addition for MVectors
